@@ -41,10 +41,31 @@ def get_target_sheet_title(service):
     return None
 
 
+def get_max_no(service, sheet_title):
+    """A열을 읽어 기존 일련번호(no) 중 최대값을 반환합니다."""
+    range_name = f"{sheet_title}!A:A"
+    try:
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=SPREADSHEET_ID, range=range_name)
+            .execute()
+        )
+        values = result.get("values", [])
+        max_no = 0
+        for row in values:
+            if row and str(row[0]).isdigit():
+                max_no = max(max_no, int(row[0]))
+        return max_no
+    except Exception as e:
+        print(f"⚠️ 일련번호(no) 조회 실패. 기본값 0 사용: {e}")
+        return 0
+
+
 def append_grades_to_sheet(rows_data):
     """
     파싱된 CSV 형태의 리스트(rows_data)를 타겟 시트의 맨 아래(빈 행)에 추가(Append)합니다.
-    rows_data 구조 예시: [['학번', '점수', '이유', '날짜', '이름', '제목'], ...]
+    rows_data 구조 예시: [['', '학번', '트랙', '점수', '유형', '이유', '날짜', '이름', '제목'], ...]
     """
     service = get_sheet_service()
     sheet_title = get_target_sheet_title(service)
@@ -52,6 +73,11 @@ def append_grades_to_sheet(rows_data):
     if not sheet_title:
         print(f"❌ 오류: 시트 ID(gid={TARGET_GID})를 찾을 수 없습니다.")
         return False
+
+    # 기존 데이터에서 최대 no 조회 후 새로 추가될 데이터에 순차적으로 no 할당
+    max_no = get_max_no(service, sheet_title)
+    for i, row in enumerate(rows_data):
+        row[0] = max_no + i + 1
 
     range_name = f"{sheet_title}!A:I"  # A~I열까지 데이터 기준으로 append
     body = {"values": rows_data}
