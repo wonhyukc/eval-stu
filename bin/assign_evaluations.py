@@ -17,7 +17,7 @@ SHEET_ID = "1_o-F6UaQ2WOe0nH2zuT_0xpwiOm1ebmWo2sEQzQptEk"
 
 def get_submitted_students():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    secret_path = os.path.join(base_dir, "secret.json")
+    secret_path = os.path.join(base_dir, "gwsServiceAccnt-mail.json")
 
     try:
         creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)

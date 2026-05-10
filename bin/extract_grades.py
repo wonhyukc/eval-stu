@@ -132,8 +132,9 @@ def extract_grades(query=None, require_attachment=False):
                 base_score = 2.0
                 violations = []
 
-                # 첨부파일 검사
-                if require_attachment:
+                # 첨부파일 검사 (과제 0.7은 예외적으로 첨부파일이 필수)
+                is_attachment_required = require_attachment or (task_num == "0.7")
+                if is_attachment_required:
                     if not has_att:
                         base_score -= 1.0
                         violations.append("첨부없음")
