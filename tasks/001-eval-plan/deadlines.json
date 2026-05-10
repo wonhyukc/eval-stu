@@ -1,0 +1,14 @@
+{
+  "py": {
+    "week_10": "2026-05-10 23:59:59",
+    "penalty_type": "zero_score" 
+  },
+  "wb1": {
+    "week_10": "2026-05-12 23:59:59",
+    "penalty_type": "zero_score"
+  },
+  "wb2": {
+    "week_10": "2026-05-12 23:59:59",
+    "penalty_type": "zero_score"
+  }
+}
