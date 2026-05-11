@@ -13,19 +13,22 @@ from modules.peer_grader import build_track_map
 from modules.match_assigner import parse_markdown_table
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-# Updated Unified Form Sheet
-SHEET_ID = "166MzQg-W6r9GEynt1bOlr8hUex0Rvx6Yky2ffSVNtKM"
-# If we need to target a specific GID, we can, but let's just grab the first sheet if GID is not strictly required.
-# GID 1491146932 is the response sheet.
+SETTINGS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "settings.json")
 
+def load_settings():
+    if os.path.exists(SETTINGS_FILE):
+        import json
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--course", type=str, default="py", help="Course prefix (e.g. py, wb)"
+        "-c", "--course", type=str, default="py", help="Course prefix (e.g. py, web)"
     )
     parser.add_argument(
-        "--week", type=str, default="06", help="Week number (e.g. 05, 06)"
+        "-w", "--week", type=str, default="06", help="Week number (e.g. 05, 06)"
     )
     parser.add_argument(
         "--offline", action="store_true", help="Use local CSV (output/sample_data.csv)"
@@ -34,6 +37,9 @@ def main():
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     secret_path = os.path.join(base_dir, "secret.json")
+
+    settings = load_settings()
+    sheet_id = settings.get("evaluation_form_sheet_id", "166MzQg-W6r9GEynt1bOlr8hUex0Rvx6Yky2ffSVNtKM")
 
     track_map = build_track_map(base_dir)
 
@@ -56,7 +62,7 @@ def main():
 
             # Find the exact worksheet
             sheet_metadata = (
-                service.spreadsheets().get(spreadsheetId=SHEET_ID).execute()
+                service.spreadsheets().get(spreadsheetId=sheet_id).execute()
             )
             target_gid = 1491146932
             sheet_title = None
@@ -72,7 +78,7 @@ def main():
             result = (
                 service.spreadsheets()
                 .values()
-                .get(spreadsheetId=SHEET_ID, range=range_name)
+                .get(spreadsheetId=sheet_id, range=range_name)
                 .execute()
             )
             values = result.get("values", [])
