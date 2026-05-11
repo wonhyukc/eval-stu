@@ -20,9 +20,10 @@ SETTINGS_FILE = os.path.join(base_dir, "settings.json")
 
 def get_student_tracks(base_dir):
     id_to_track = {}
+    name_to_id = {}
     for filepath in [
-        os.path.join(base_dir, "input", "students", "py-students.md"),
-        os.path.join(base_dir, "input", "students", "wb-students.md"),
+        os.path.join(base_dir, "5input", "students", "py-students.md"),
+        os.path.join(base_dir, "5input", "students", "wb-students.md"),
     ]:
         if os.path.exists(filepath):
             with open(filepath, "r", encoding="utf-8") as f:
@@ -34,9 +35,22 @@ def get_student_tracks(base_dir):
                     if len(cols) > 8:
                         track = cols[1]
                         student_id = cols[3]
+                        eng_name = cols[4]
+                        kor_name = cols[8]
                         if student_id.isdigit():
                             id_to_track[student_id] = track
-    return id_to_track
+                            
+                            clean_eng = re.sub(r"\s+", "", eng_name).lower()
+                            if clean_eng:
+                                name_to_id[clean_eng] = student_id
+                            clean_kor = re.sub(r"\s+", "", kor_name)
+                            if clean_kor:
+                                name_to_id[clean_kor] = student_id
+                            
+                            email_addr = cols[5].lower()
+                            name_to_id[email_addr] = student_id
+                            
+    return id_to_track, name_to_id
 
 
 def load_settings():
@@ -52,7 +66,7 @@ def save_settings(settings):
         json.dump(settings, f, ensure_ascii=False, indent=4)
 
 
-def extract_grades(query=None, require_attachment=False, lang="ko"):
+def extract_grades(course="py", query=None, require_attachment=False, lang="ko"):
     settings = load_settings()
 
     if query and query != settings.get("gmail_search_query"):
@@ -63,7 +77,15 @@ def extract_grades(query=None, require_attachment=False, lang="ko"):
     current_query = settings.get("gmail_search_query", "과제 0.4 | assignment 0.4")
     print(f"🔍 다음 쿼리 규칙으로 메일을 수집합니다: [{current_query}]")
 
-    id_to_track = get_student_tracks(base_dir)
+    course_config = settings.get("courses", {}).get(course)
+    if not course_config:
+        print(f"❌ 설정 오류: settings.json에 '{course}' 과정 설정이 없습니다.")
+        return
+
+    allowed_tracks = course_config.get("tracks", [])
+    output_suffix = course_config.get("output_suffix", course)
+
+    id_to_track, name_to_id = get_student_tracks(base_dir)
 
     deadline_dt = datetime.strptime("2026-04-20 09:00:00", "%Y-%m-%d %H:%M:%S")
     emails = fetch_assignment_emails(current_query, max_results=50)
@@ -100,9 +122,27 @@ def extract_grades(query=None, require_attachment=False, lang="ko"):
 
         # 4. 학번 파싱 (이미지의 경우 2026300096 등 10자리 숫자이므로 \d{8,11} 매칭)
         match = re.search(r"\d{8,11}", subject)
-        student_id = match.group(0) if match else ("No ID" if lang == "en" else "학번없음")
+        student_id = match.group(0) if match else ""
+        
+        # 이름/이메일로 학번 찾기 (제목에 학번이 없는 경우)
+        if not student_id:
+            clean_name = re.sub(r"\s+", "", name).lower()
+            if clean_name in name_to_id:
+                student_id = name_to_id[clean_name]
+            else:
+                # 이메일 주소로도 검색 시도
+                sender_email = sender_str.split("<")[-1].strip(">").lower()
+                if sender_email in name_to_id:
+                    student_id = name_to_id[sender_email]
+
+        if not student_id:
+            student_id = "No ID" if lang == "en" else "학번없음"
 
         track_num = id_to_track.get(student_id, "")
+
+        # 과정별 허용된 트랙인지 확인 (예: 웹은 761, 762만)
+        if allowed_tracks and track_num not in allowed_tracks:
+            continue
 
         # 4.5 중복 제출 확인 (학번이 확인된 경우 1회만 점수 부여)
         if student_id != ("No ID" if lang == "en" else "학번없음"):
@@ -195,7 +235,7 @@ def extract_grades(query=None, require_attachment=False, lang="ko"):
             ]
         )
 
-    output_path = os.path.join(base_dir, "9output", "grades_output.csv")
+    output_path = os.path.join(base_dir, "9output", f"grades_output_{output_suffix}.csv")
     with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f)
         writer.writerows(output_rows)
@@ -210,13 +250,20 @@ def extract_grades(query=None, require_attachment=False, lang="ko"):
     # 헤더(첫 번째 행)는 제외하고 순수 데이터만 배열에 담아 넘깁니다.
     data_to_append = output_rows[1:]
     if data_to_append:
-        append_grades_to_sheet(data_to_append)
+        append_grades_to_sheet(data_to_append, course=course)
     else:
         print("❗ 시트에 추가할 새로운 메일 데이터가 없습니다.")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="구글 메일 기반 과제 성적 자동 추출기")
+    parser.add_argument(
+        "--course",
+        type=str,
+        default="py",
+        choices=["py", "web"],
+        help="대상 과목 선택 (py 또는 web)",
+    )
     parser.add_argument(
         "--query",
         type=str,
@@ -237,4 +284,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    extract_grades(query=args.query, require_attachment=args.require_attachment, lang=args.lang)
+    extract_grades(course=args.course, query=args.query, require_attachment=args.require_attachment, lang=args.lang)

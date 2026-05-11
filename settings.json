@@ -1,3 +1,17 @@
 {
-    "gmail_search_query": "\"과제 0.11\" OR \"assignment 0.11\" OR \"과제 0.b\" OR \"assignment 0.b\""
+    "gmail_search_query": "\"과제 0.11\" OR \"assignment 0.11\" OR \"과제 0.b\" OR \"assignment 0.b\"",
+    "courses": {
+        "py": {
+            "sheet_id": "1F69Wtmrr3MYMJI8jgjPKBWh3m8tDaX6QyBVDSHH4vEc",
+            "target_gid": 1892167835,
+            "tracks": ["751"],
+            "output_suffix": "py"
+        },
+        "web": {
+            "sheet_id": "1XA5Hnu5PEidFMreanPCy1eMrofGiyFDPo4buN3129Mc",
+            "target_gid": 1514293361,
+            "tracks": ["761", "762"],
+            "output_suffix": "web"
+        }
+    }
 }
