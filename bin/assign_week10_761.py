@@ -66,7 +66,7 @@ def main():
             hakbun_idx = i
         elif "GitHub Repository" in h_str:
             url_idx = i
-        elif "주차 Week" in h_str:
+        elif "주차" in h_str or "week" in h_str.lower():
             week_idx = i
 
     submissions = {}
@@ -84,7 +84,7 @@ def main():
             submissions[hakbun] = url
 
     wb_students = parse_markdown_table(
-        os.path.join(base_dir, "input", "students", "wb-students.md")
+        os.path.join(base_dir, "5input", "students", "wb-students.md")
     )
     # Filter only 762 class
     wb_roster = {
@@ -105,7 +105,7 @@ def main():
 
     assignments = assign_only_submitters(wb_submitters, num_peers)
 
-    out_md = os.path.join(base_dir, "docs", "week10_peer_review_assignments_761.md")
+    out_md = os.path.join(base_dir, "9output", "week10_peer_review_assignments_761.md")
     with open(out_md, "w", encoding="utf-8") as f:
         f.write(
             "# Week 10 Peer Review Assignments / 10주차 상호평가 배당표 (Track 761 / web)\n\n"
@@ -129,7 +129,7 @@ def main():
 
             f.write("| " + " | ".join(row_cells) + " |\n")
 
-    print(f"✅ 마크다운 생성 완료: docs/week10_peer_review_assignments_761.md")
+    print(f"✅ 마크다운 생성 완료: 9output/week10_peer_review_assignments_761.md")
 
 
 if __name__ == "__main__":

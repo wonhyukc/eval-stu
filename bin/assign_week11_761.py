@@ -66,7 +66,7 @@ def main():
             hakbun_idx = i
         elif "GitHub Repository" in h_str:
             url_idx = i
-        elif "주차" in h_str or "week" in h_str.lower():
+        elif "주차" in h_str and "week" in h_str.lower():
             week_idx = i
 
     submissions = {}
@@ -74,7 +74,7 @@ def main():
         if len(row) <= max(hakbun_idx, url_idx, week_idx):
             continue
         week = str(row[week_idx]).strip()
-        if week != "10":
+        if week != "11":
             continue
 
         hakbun = str(row[hakbun_idx]).strip()
@@ -88,7 +88,7 @@ def main():
     )
     # Filter only 762 class
     wb_roster = {
-        s["학번"]: s for s in wb_students if str(s.get("강좌번호", "")).strip() == "762"
+        s["학번"]: s for s in wb_students if str(s.get("강좌번호", "")).strip() == "761"
     }
 
     wb_submitters = []
@@ -98,17 +98,17 @@ def main():
             student_info["url"] = url
             wb_submitters.append(student_info)
 
-    print(f"✅ 10주차 web 02 (762) 제출자 수: {len(wb_submitters)}명")
+    print(f"✅ 11주차 web 01 (761) 제출자 수: {len(wb_submitters)}명")
 
     random.shuffle(wb_submitters)
     num_peers = min(3, len(wb_submitters) - 1)
 
     assignments = assign_only_submitters(wb_submitters, num_peers)
 
-    out_md = os.path.join(base_dir, "9output", "week10_peer_review_assignments_762.md")
+    out_md = os.path.join(base_dir, "9output", "week11_peer_review_assignments_761.md")
     with open(out_md, "w", encoding="utf-8") as f:
         f.write(
-            "# Week 10 Peer Review Assignments / 10주차 상호평가 배당표 (Track 762 / web)\n\n"
+            "# Week 11 Peer Review Assignments / 11주차 상호평가 배당표 (Track 761 / web)\n\n"
         )
         f.write("*사용자 규칙: 제출자만 서로 상호 평가하도록 배정되었습니다.*\n\n")
         f.write(
@@ -129,7 +129,7 @@ def main():
 
             f.write("| " + " | ".join(row_cells) + " |\n")
 
-    print(f"✅ 마크다운 생성 완료: 9output/week10_peer_review_assignments_762.md")
+    print(f"✅ 마크다운 생성 완료: 9output/week11_peer_review_assignments_761.md")
 
 
 if __name__ == "__main__":
