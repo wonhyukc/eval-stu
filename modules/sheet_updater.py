@@ -84,6 +84,10 @@ def append_grades_to_sheet(rows_data, course="py"):
     max_no = get_max_no(service, spreadsheet_id, sheet_title)
     for i, row in enumerate(rows_data):
         row[0] = max_no + i + 1
+        # '유형(Type)' 컬럼(인덱스 4)에 대해, 구글 시트가 숫자로 자동 변환하지 못하도록 문자열 강제 포맷팅(') 적용
+        if len(row) > 4:
+            clean_type = str(row[4]).replace('과제', '').strip()
+            row[4] = f"'{clean_type}"
 
     range_name = f"{sheet_title}!A:I"  # A~I열까지 데이터 기준으로 append
     body = {"values": rows_data}
