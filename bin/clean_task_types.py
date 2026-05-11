@@ -32,6 +32,7 @@ def clean_sheet(course):
         f"\n🚀 [{course.upper()} 과정] 구글 시트('{sheet_title}') E컬럼 데이터 분석 및 클렌징 시작..."
     )
 
+    # 대상 시트의 A열부터 E열까지의 전체 데이터를 가져옵니다. (E컬럼: 과제 유형)
     range_name = f"{sheet_title}!A:E"
     result = (
         service.spreadsheets()
@@ -41,6 +42,7 @@ def clean_sheet(course):
     )
     values = result.get("values", [])
 
+    # 헤더(1행) 외에 실제 데이터가 존재하지 않는 경우 처리 중단
     if len(values) < 2:
         print("데이터가 없습니다.")
         return
