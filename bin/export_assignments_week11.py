@@ -8,6 +8,7 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SPREADSHEET_ID = "1F69Wtmrr3MYMJI8jgjPKBWh3m8tDaX6QyBVDSHH4vEc"
 TARGET_GID = 794156024
 
+
 def get_sheet_service():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     secret_path = os.path.join(base_dir, "secret.json")
@@ -15,8 +16,10 @@ def get_sheet_service():
         creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)
     else:
         import google.auth
+
         creds, _ = google.auth.default(scopes=SCOPES)
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
+
 
 def get_target_sheet_title(service):
     sheet_metadata = service.spreadsheets().get(spreadsheetId=SPREADSHEET_ID).execute()
@@ -27,13 +30,14 @@ def get_target_sheet_title(service):
             return props.get("title")
     return None
 
+
 def parse_markdown(md_file, track_name, week):
     rows = []
     if not os.path.exists(md_file):
         return rows
     with open(md_file, "r", encoding="utf-8") as f:
         lines = f.readlines()
-    
+
     in_table = False
     for line in lines:
         line = line.strip()
@@ -56,6 +60,7 @@ def parse_markdown(md_file, track_name, week):
             rows.append(clean_parts)
     return rows
 
+
 def main():
     service = get_sheet_service()
     sheet_title = get_target_sheet_title(service)
@@ -76,17 +81,23 @@ def main():
 
     range_name = f"{sheet_title}!A:F"
     body = {"values": all_rows}
-    result = service.spreadsheets().values().append(
-        spreadsheetId=SPREADSHEET_ID,
-        range=range_name,
-        valueInputOption="USER_ENTERED",
-        insertDataOption="INSERT_ROWS",
-        body=body
-    ).execute()
-    
+    result = (
+        service.spreadsheets()
+        .values()
+        .append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=range_name,
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body=body,
+        )
+        .execute()
+    )
+
     updates = result.get("updates", {})
     updated_cells = updates.get("updatedCells", 0)
     print(f"✅ Appended {updated_cells} cells in {sheet_title}")
+
 
 if __name__ == "__main__":
     main()

@@ -13,14 +13,19 @@ from modules.peer_grader import build_track_map
 from modules.match_assigner import parse_markdown_table
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-SETTINGS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "settings.json")
+SETTINGS_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "settings.json"
+)
+
 
 def load_settings():
     if os.path.exists(SETTINGS_FILE):
         import json
+
         with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -39,7 +44,9 @@ def main():
     secret_path = os.path.join(base_dir, "secret.json")
 
     settings = load_settings()
-    sheet_id = settings.get("evaluation_form_sheet_id", "166MzQg-W6r9GEynt1bOlr8hUex0Rvx6Yky2ffSVNtKM")
+    sheet_id = settings.get(
+        "evaluation_form_sheet_id", "166MzQg-W6r9GEynt1bOlr8hUex0Rvx6Yky2ffSVNtKM"
+    )
 
     track_map = build_track_map(base_dir)
 

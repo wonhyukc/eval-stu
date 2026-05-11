@@ -304,7 +304,7 @@ def extract_gmail_interactive(
                             regex_str = r"^(과제|assignment)0?\.(b|11)(\d{10})$"
                         else:
                             regex_str = rf"^(과제|assignment)0?\.{week_val}(\d{{10}})$"
-                            
+
                         exact_title_re = re.compile(
                             regex_str,
                             re.IGNORECASE,

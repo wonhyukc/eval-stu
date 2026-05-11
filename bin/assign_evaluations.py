@@ -1,4 +1,5 @@
-#!/usr/import sys
+#!/usr/bin/env python3
+import sys
 import os
 import random
 import json
@@ -11,7 +12,9 @@ from googleapiclient.discovery import build
 from modules.match_assigner import parse_markdown_table
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-SETTINGS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "settings.json")
+SETTINGS_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "settings.json"
+)
 
 
 def load_settings():
@@ -42,25 +45,43 @@ def assign_only_submitters(submitters, num_peers=3):
 
 def main():
     parser = argparse.ArgumentParser(description="상호평가 자동 배정 시스템")
-    parser.add_argument("-c", "--c", "--course", dest="course", type=str, default="py", help="과정 (py, web)")
-    parser.add_argument("-w", "--w", "--week", dest="week", type=str, required=True, help="주차 (예: 11)")
+    parser.add_argument(
+        "-c",
+        "--c",
+        "--course",
+        dest="course",
+        type=str,
+        default="py",
+        help="과정 (py, web)",
+    )
+    parser.add_argument(
+        "-w",
+        "--w",
+        "--week",
+        dest="week",
+        type=str,
+        required=True,
+        help="주차 (예: 11)",
+    )
     args = parser.parse_args()
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     secret_path = os.path.join(base_dir, "secret.json")
-    
+
     if not os.path.exists(secret_path):
         # fallback for old name if needed
         secret_path = os.path.join(base_dir, "gwsServiceAccnt-mail.json")
 
     settings = load_settings()
-    sheet_id = settings.get("assignment_form_sheet_id", "1_o-F6UaQ2WOe0nH2zuT_0xpwiOm1ebmWo2sEQzQptEk")
-    
+    sheet_id = settings.get(
+        "assignment_form_sheet_id", "1_o-F6UaQ2WOe0nH2zuT_0xpwiOm1ebmWo2sEQzQptEk"
+    )
+
     course_config = settings.get("courses", {}).get(args.course)
     if not course_config:
         print(f"❌ 설정 오류: settings.json에 '{args.course}' 과정 설정이 없습니다.")
         return
-        
+
     allowed_tracks = course_config.get("tracks", [])
 
     print(f"🔄 구글 시트({sheet_id})에서 {args.week}주차 제출자 명단을 가져오는 중...")
@@ -71,7 +92,12 @@ def main():
     first_sheet_title = sheet_metadata["sheets"][0]["properties"]["title"]
 
     range_name = f"{first_sheet_title}!A:Z"
-    result = service.spreadsheets().values().get(spreadsheetId=sheet_id, range=range_name).execute()
+    result = (
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=sheet_id, range=range_name)
+        .execute()
+    )
     values = result.get("values", [])
 
     if not values:
@@ -110,23 +136,29 @@ def main():
     roster_file = f"5input/students/{args.course}-students.md"
     roster_path = os.path.join(base_dir, roster_file)
     if not os.path.exists(roster_path):
-        roster_path = os.path.join(base_dir, "input", "students", f"{args.course}-students.md")
+        roster_path = os.path.join(
+            base_dir, "input", "students", f"{args.course}-students.md"
+        )
 
     students_list = parse_markdown_table(roster_path)
-    
+
     for track in allowed_tracks:
         roster = {
-            s["학번"]: s for s in students_list if str(s.get("강좌번호", "")).strip() == track
+            s["학번"]: s
+            for s in students_list
+            if str(s.get("강좌번호", "")).strip() == track
         }
-        
+
         submitters = []
         for s_id, url in submissions.items():
             if s_id in roster:
                 student_info = roster[s_id]
                 student_info["url"] = url
                 submitters.append(student_info)
-                
-        print(f"✅ {args.week}주차 {args.course} 트랙 {track} 제출자 수: {len(submitters)}명")
+
+        print(
+            f"✅ {args.week}주차 {args.course} 트랙 {track} 제출자 수: {len(submitters)}명"
+        )
 
         if not submitters:
             print(f"⚠️ {track} 분반에 제출자가 없어 건너뜁니다.")
@@ -137,13 +169,19 @@ def main():
 
         assignments = assign_only_submitters(submitters, num_peers)
 
-        out_md = os.path.join(base_dir, "9output", f"week{args.week}_peer_review_assignments_{track}.md")
+        out_md = os.path.join(
+            base_dir, "9output", f"week{args.week}_peer_review_assignments_{track}.md"
+        )
         os.makedirs(os.path.dirname(out_md), exist_ok=True)
-        
+
         with open(out_md, "w", encoding="utf-8") as f:
-            f.write(f"# Week {args.week} Peer Review Assignments / {args.week}주차 상호평가 배당표 (Track {track} / {args.course})\n\n")
+            f.write(
+                f"# Week {args.week} Peer Review Assignments / {args.week}주차 상호평가 배당표 (Track {track} / {args.course})\n\n"
+            )
             f.write("*사용자 규칙: 제출자만 서로 상호 평가하도록 배정되었습니다.*\n\n")
-            f.write("| Evaluator / 평가자 (학번) | Reviewee 1 / 피평가자 1 | Reviewee 2 / 피평가자 2 | Reviewee 3 / 피평가자 3 |\n")
+            f.write(
+                "| Evaluator / 평가자 (학번) | Reviewee 1 / 피평가자 1 | Reviewee 2 / 피평가자 2 | Reviewee 3 / 피평가자 3 |\n"
+            )
             f.write("| :--- | :--- | :--- | :--- |\n")
 
             for eval_student in sorted(submitters, key=lambda x: x["학번"]):
@@ -160,6 +198,7 @@ def main():
                 f.write("| " + " | ".join(row_cells) + " |\n")
 
         print(f"✅ 마크다운 생성 완료: {out_md}")
+
 
 if __name__ == "__main__":
     main()

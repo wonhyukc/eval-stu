@@ -39,17 +39,17 @@ def get_student_tracks(base_dir):
                         kor_name = cols[8]
                         if student_id.isdigit():
                             id_to_track[student_id] = track
-                            
+
                             clean_eng = re.sub(r"\s+", "", eng_name).lower()
                             if clean_eng:
                                 name_to_id[clean_eng] = student_id
                             clean_kor = re.sub(r"\s+", "", kor_name)
                             if clean_kor:
                                 name_to_id[clean_kor] = student_id
-                            
+
                             email_addr = cols[5].lower()
                             name_to_id[email_addr] = student_id
-                            
+
     return id_to_track, name_to_id
 
 
@@ -130,7 +130,7 @@ def extract_grades(course="py", query=None, require_attachment=False, lang="ko")
         # 4. 학번 파싱 (이미지의 경우 2026300096 등 10자리 숫자이므로 \d{8,11} 매칭)
         match = re.search(r"\d{8,11}", subject)
         student_id = match.group(0) if match else ""
-        
+
         # 이름/이메일로 학번 찾기 (제목에 학번이 없는 경우)
         if not student_id:
             clean_name = re.sub(r"\s+", "", name).lower()
@@ -177,7 +177,7 @@ def extract_grades(course="py", query=None, require_attachment=False, lang="ko")
         else:
             task_prefix = f"과제{task_num} " if task_num else "과제 "
             reason = f"{task_prefix.strip()} 마감시간초과"
-            
+
         has_att = email_data.get("has_attachment", False)
 
         if mail_dt:
@@ -194,11 +194,15 @@ def extract_grades(course="py", query=None, require_attachment=False, lang="ko")
                 if is_attachment_required:
                     if not has_att:
                         base_score -= 1.0
-                        violations.append("No attachment" if lang == "en" else "첨부없음")
+                        violations.append(
+                            "No attachment" if lang == "en" else "첨부없음"
+                        )
                 else:
                     if has_att:
                         base_score -= 1.0
-                        violations.append("Attachment included" if lang == "en" else "첨부있음")
+                        violations.append(
+                            "Attachment included" if lang == "en" else "첨부있음"
+                        )
 
                 # 제목 양식 검사
                 # 띄어쓰기나 대괄호 없이 '과제0.X학번' 또는 'assignment0.X학번'
@@ -219,14 +223,24 @@ def extract_grades(course="py", query=None, require_attachment=False, lang="ko")
 
                 if not is_exact_title:
                     base_score -= 0.2
-                    violations.append("Title format error" if lang == "en" else "제목양식오류")
+                    violations.append(
+                        "Title format error" if lang == "en" else "제목양식오류"
+                    )
 
                 if not violations:
                     score = 2.0
-                    reason = "Met all conditions (+2)" if lang == "en" else "정확한 양식/조건충족(+2)"
+                    reason = (
+                        "Met all conditions (+2)"
+                        if lang == "en"
+                        else "정확한 양식/조건충족(+2)"
+                    )
                 else:
                     score = round(base_score, 1)
-                    reason = f"Violation({','.join(violations)})" if lang == "en" else f"조건위반({','.join(violations)})"
+                    reason = (
+                        f"Violation({','.join(violations)})"
+                        if lang == "en"
+                        else f"조건위반({','.join(violations)})"
+                    )
 
         output_rows.append(
             [
@@ -242,7 +256,9 @@ def extract_grades(course="py", query=None, require_attachment=False, lang="ko")
             ]
         )
 
-    output_path = os.path.join(base_dir, "9output", f"grades_output_{output_suffix}.csv")
+    output_path = os.path.join(
+        base_dir, "9output", f"grades_output_{output_suffix}.csv"
+    )
     with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f)
         writer.writerows(output_rows)
@@ -265,7 +281,9 @@ def extract_grades(course="py", query=None, require_attachment=False, lang="ko")
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="구글 메일 기반 과제 성적 자동 추출기")
     parser.add_argument(
-        "-c", "--c", "--course",
+        "-c",
+        "--c",
+        "--course",
         dest="course",
         type=str,
         default="py",
@@ -273,7 +291,9 @@ if __name__ == "__main__":
         help="대상 과목 선택 (py 또는 web)",
     )
     parser.add_argument(
-        "-q", "--q", "--query",
+        "-q",
+        "--q",
+        "--query",
         dest="query",
         type=str,
         default=None,
@@ -293,4 +313,9 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    extract_grades(course=args.course, query=args.query, require_attachment=args.require_attachment, lang=args.lang)
+    extract_grades(
+        course=args.course,
+        query=args.query,
+        require_attachment=args.require_attachment,
+        lang=args.lang,
+    )
