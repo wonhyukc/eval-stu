@@ -69,18 +69,25 @@ def save_settings(settings):
 def extract_grades(course="py", query=None, require_attachment=False, lang="ko"):
     settings = load_settings()
 
-    if query and query != settings.get("gmail_search_query"):
-        settings["gmail_search_query"] = query
-        save_settings(settings)
-        print(f"📝 settings.json 의 검색 쿼리가 업데이트 되었습니다: '{query}'")
-
-    current_query = settings.get("gmail_search_query", "과제 0.4 | assignment 0.4")
-    print(f"🔍 다음 쿼리 규칙으로 메일을 수집합니다: [{current_query}]")
-
     course_config = settings.get("courses", {}).get(course)
     if not course_config:
         print(f"❌ 설정 오류: settings.json에 '{course}' 과정 설정이 없습니다.")
         return
+
+    keyword = course_config.get("keyword", "")
+
+    if query:
+        # 사용자가 "0.b"처럼 번호만 입력한 경우 과정 키워드를 자동으로 붙임
+        if not ("과제" in query or "assignment" in query.lower()):
+            query = f"{keyword} {query}"
+
+        if query != settings.get("gmail_search_query"):
+            settings["gmail_search_query"] = query
+            save_settings(settings)
+            print(f"📝 settings.json 의 검색 쿼리가 업데이트 되었습니다: '{query}'")
+
+    current_query = settings.get("gmail_search_query", "과제 0.4 | assignment 0.4")
+    print(f"🔍 다음 쿼리 규칙으로 메일을 수집합니다: [{current_query}]")
 
     allowed_tracks = course_config.get("tracks", [])
     output_suffix = course_config.get("output_suffix", course)
@@ -258,17 +265,19 @@ def extract_grades(course="py", query=None, require_attachment=False, lang="ko")
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="구글 메일 기반 과제 성적 자동 추출기")
     parser.add_argument(
-        "--course",
+        "-c", "--c", "--course",
+        dest="course",
         type=str,
         default="py",
         choices=["py", "web"],
         help="대상 과목 선택 (py 또는 web)",
     )
     parser.add_argument(
-        "--query",
+        "-q", "--q", "--query",
+        dest="query",
         type=str,
         default=None,
-        help="검색 쿼리 지정 (지정하지 않으면 settings.json의 마지막 값을 사용)",
+        help="검색할 과제 번호(예: '0.b') 또는 쿼리 (지정하지 않으면 settings.json의 마지막 값 사용)",
     )
     parser.add_argument(
         "--require-attachment",

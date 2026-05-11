@@ -4,14 +4,21 @@
         "py": {
             "sheet_id": "1F69Wtmrr3MYMJI8jgjPKBWh3m8tDaX6QyBVDSHH4vEc",
             "target_gid": 1892167835,
-            "tracks": ["751"],
-            "output_suffix": "py"
+            "tracks": [
+                "468"
+            ],
+            "output_suffix": "py",
+            "keyword": "과제"
         },
         "web": {
             "sheet_id": "1XA5Hnu5PEidFMreanPCy1eMrofGiyFDPo4buN3129Mc",
             "target_gid": 1514293361,
-            "tracks": ["761", "762"],
-            "output_suffix": "web"
+            "tracks": [
+                "761",
+                "762"
+            ],
+            "output_suffix": "web",
+            "keyword": "assignment"
         }
     }
 }
