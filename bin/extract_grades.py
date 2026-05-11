@@ -115,9 +115,13 @@ def extract_grades(query=None, require_attachment=False):
         score = 0
         formatted_date = "알수없음"
 
-        # 쿼리에서 과제 번호 추출 (예: '과제 0.4 | assignment 0.4' -> '0.4')
-        q_match = re.search(r"\d+(?:\.\d+)?", current_query)
+        # 쿼리에서 과제 번호 추출 (예: '과제 0.4 | assignment 0.4' -> '0.4', '과제 0.a' -> '0.a')
+        q_match = re.search(r"\d+(?:\.[\da-zA-Z]+)?", current_query)
         task_num = q_match.group(0) if q_match else ""
+
+        if task_num == "0.10":
+            task_num = "0.a"
+
         task_prefix = f"과제{task_num} " if task_num else "과제 "
 
         reason = f"{task_prefix.strip()} 마감시간초과"
@@ -146,8 +150,14 @@ def extract_grades(query=None, require_attachment=False):
                 # 제목 양식 검사
                 # 띄어쓰기나 대괄호 없이 '과제0.X학번' 또는 'assignment0.X학번'
                 clean_sub = re.sub(r"\s+", "", subject.lower())
+
+                if task_num == "0.a":
+                    task_regex_part = r"(0\.a|0\.10)"
+                else:
+                    task_regex_part = task_num.replace(".", r"\.") if task_num else ""
+
                 exact_title_re = re.compile(
-                    rf"^(과제|assignment)0?\.?{task_num.replace('.', r'\.') if task_num else ''}(\d{{8,11}})$",
+                    rf"^(과제|assignment)0?\.?{task_regex_part}(\d{{8,11}})$",
                     re.IGNORECASE,
                 )
                 is_exact_title = bool(exact_title_re.match(clean_sub))
