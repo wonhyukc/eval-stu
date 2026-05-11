@@ -1,0 +1,32 @@
+KHYAM PRASAD BASHYAL, 2026300032
+BK SUNIL, 2026300030
+Ashma Tamøng, ?
+Sushmita Thapa, 2026300036
+Hiếu Nguyễn Đức, 2026300091
+Hiếu Nguyễn Đức (Google Forms에서 공유), 2026300091
+Hiếu Nguyễn Đức (Google Drive에서 공유), 2026300091
+Dhanraj Sunar, 2026300034
+Dipesh Oli, 2026300015
+DEVRAJ TAMATTA, 2026300027
+Semina Rawal, 2026300002
+Meenakshi Rc, 2026300006
+Manisha Baniya, 2026300033
+Manisha Baniya, 2026300033
+Rubika Gorachan, 2026300029
+MANOJ PARIYAR, 2026300023
+sushmitathapa537, 2026300036
+Devaki Gurung, 2026300003
+ANIK ROY, 2026300022
+Puza Bhlon, 2026300013
+Nila Gole, 2026300009
+Mahima Manandhar, 2026300018
+DILIP DUWADI, 2026300001
+UTSAV KANDEL, 2026300012
+Sushmita Thapa, 2026300036
+Sushmita Thapa, 2026300036
+Sweta Subedi Chhetri, 2026300035
+Sushmita Thapa, 2026300036
+Sajja giri, 2026300020
+Sabina Gomja, ?
+AADITYA RAJ SHRESTHA, 2026300021
+Lộc Đinh (Google Docs에서 공유), 2026300094

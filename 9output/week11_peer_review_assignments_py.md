@@ -1,0 +1,18 @@
+# Week 11 Peer Review Assignments / 11주차 상호평가 배당표 (Track 468 / py)
+
+*사용자 규칙: 제출자만 서로 상호 평가하도록 배정되었습니다.*
+
+| Evaluator / 평가자 (학번) | Reviewee 1 / 피평가자 1 | Reviewee 2 / 피평가자 2 | Reviewee 3 / 피평가자 3 |
+| :--- | :--- | :--- | :--- |
+| **2026300075** | [2026300081](https://github.com/Nguyenthithu035/-11.md/blob/main/lab.ipynb) | [2026300089](https://github.com/ngoquangthanh7777-lgtm/python/blob/main/codeupdate.ipynb) | [2026300095](https://github.com/trannhatlong14082006-lab/-11/blob/main/lab.ipynb) |
+| **2026300076** | [2026300080](https://github.com/nguyenthilananh09081999-beep/-0.6/blob/main/lab.ipynb) | [2026300086](https://github.com/quanpham11a2-arch/python/blob/main/minhquan11.ipynb) | [2026300075](https://github.com/maianhdo1608/WEEK-11/blob/main/Lab.ipynb) |
+| **2026300079** | [2026300088](https://github.com/donghong221201-jpg/Computer-Thinking-Week11/blob/main/lab.ipynb) | [2026300087](https://github.com/phanthimyduyen140298-create/-11/blob/main/lab.ipynb) | [2026300092](https://github.com/nguyenthithien0211-lang/ThienNT-WebB/blob/main/Copy_of_lab.ipynb) |
+| **2026300080** | [2026300086](https://github.com/quanpham11a2-arch/python/blob/main/minhquan11.ipynb) | [2026300075](https://github.com/maianhdo1608/WEEK-11/blob/main/Lab.ipynb) | [2026300081](https://github.com/Nguyenthithu035/-11.md/blob/main/lab.ipynb) |
+| **2026300081** | [2026300089](https://github.com/ngoquangthanh7777-lgtm/python/blob/main/codeupdate.ipynb) | [2026300095](https://github.com/trannhatlong14082006-lab/-11/blob/main/lab.ipynb) | [2026300079](https://github.com/hieusydao12-arch/-011/blob/main/lab.ipynb) |
+| **2026300084** | [2026300076](https://github.com/phanlien250592-arch/week7-Assignment/blob/main/lab.ipynb) | [2026300080](https://github.com/nguyenthilananh09081999-beep/-0.6/blob/main/lab.ipynb) | [2026300086](https://github.com/quanpham11a2-arch/python/blob/main/minhquan11.ipynb) |
+| **2026300086** | [2026300075](https://github.com/maianhdo1608/WEEK-11/blob/main/Lab.ipynb) | [2026300081](https://github.com/Nguyenthithu035/-11.md/blob/main/lab.ipynb) | [2026300089](https://github.com/ngoquangthanh7777-lgtm/python/blob/main/codeupdate.ipynb) |
+| **2026300087** | [2026300092](https://github.com/nguyenthithien0211-lang/ThienNT-WebB/blob/main/Copy_of_lab.ipynb) | [2026300084](https://github.com/mijuujuusan414813-arch/mini-first-repository/tree/main) | [2026300076](https://github.com/phanlien250592-arch/week7-Assignment/blob/main/lab.ipynb) |
+| **2026300088** | [2026300087](https://github.com/phanthimyduyen140298-create/-11/blob/main/lab.ipynb) | [2026300092](https://github.com/nguyenthithien0211-lang/ThienNT-WebB/blob/main/Copy_of_lab.ipynb) | [2026300084](https://github.com/mijuujuusan414813-arch/mini-first-repository/tree/main) |
+| **2026300089** | [2026300095](https://github.com/trannhatlong14082006-lab/-11/blob/main/lab.ipynb) | [2026300079](https://github.com/hieusydao12-arch/-011/blob/main/lab.ipynb) | [2026300088](https://github.com/donghong221201-jpg/Computer-Thinking-Week11/blob/main/lab.ipynb) |
+| **2026300092** | [2026300084](https://github.com/mijuujuusan414813-arch/mini-first-repository/tree/main) | [2026300076](https://github.com/phanlien250592-arch/week7-Assignment/blob/main/lab.ipynb) | [2026300080](https://github.com/nguyenthilananh09081999-beep/-0.6/blob/main/lab.ipynb) |
+| **2026300095** | [2026300079](https://github.com/hieusydao12-arch/-011/blob/main/lab.ipynb) | [2026300088](https://github.com/donghong221201-jpg/Computer-Thinking-Week11/blob/main/lab.ipynb) | [2026300087](https://github.com/phanthimyduyen140298-create/-11/blob/main/lab.ipynb) |

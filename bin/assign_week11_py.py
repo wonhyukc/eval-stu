@@ -80,7 +80,7 @@ def main():
         if len(row) <= max(hakbun_idx, url_idx, week_idx):
             continue
         week = str(row[week_idx]).strip()
-        if week != "10":
+        if week != "11":
             continue
 
         hakbun = str(row[hakbun_idx]).strip()
@@ -105,7 +105,7 @@ def main():
             student_info["url"] = url
             py_submitters.append(student_info)
 
-    print(f"✅ 10주차 py 제출자 수: {len(py_submitters)}명")
+    print(f"✅ 11주차 py 제출자 수: {len(py_submitters)}명")
 
     # Assign peers (only submitters to each other)
     # Shuffle submitters to make random assignment
@@ -115,10 +115,10 @@ def main():
     assignments = assign_only_submitters(py_submitters, num_peers)
 
     # Write to Markdown
-    out_md = os.path.join(base_dir, "output", "week10_peer_review_assignments_py.md")
+    out_md = os.path.join(base_dir, "output", "week11_peer_review_assignments_py.md")
     with open(out_md, "w", encoding="utf-8") as f:
         f.write(
-            "# Week 10 Peer Review Assignments / 10주차 상호평가 배당표 (Track 468 / py)\n\n"
+            "# Week 11 Peer Review Assignments / 11주차 상호평가 배당표 (Track 468 / py)\n\n"
         )
         f.write("*사용자 규칙: 제출자만 서로 상호 평가하도록 배정되었습니다.*\n\n")
         f.write(
@@ -140,7 +140,7 @@ def main():
 
             f.write("| " + " | ".join(row_cells) + " |\n")
 
-    print(f"✅ 마크다운 생성 완료: output/week10_peer_review_assignments_py.md")
+    print(f"✅ 마크다운 생성 완료: output/week11_peer_review_assignments_py.md")
 
 
 if __name__ == "__main__":
