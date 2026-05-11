@@ -52,7 +52,7 @@ def save_settings(settings):
         json.dump(settings, f, ensure_ascii=False, indent=4)
 
 
-def extract_grades(query=None, require_attachment=False):
+def extract_grades(query=None, require_attachment=False, lang="ko"):
     settings = load_settings()
 
     if query and query != settings.get("gmail_search_query"):
@@ -100,12 +100,12 @@ def extract_grades(query=None, require_attachment=False):
 
         # 4. 학번 파싱 (이미지의 경우 2026300096 등 10자리 숫자이므로 \d{8,11} 매칭)
         match = re.search(r"\d{8,11}", subject)
-        student_id = match.group(0) if match else "학번없음"
+        student_id = match.group(0) if match else ("No ID" if lang == "en" else "학번없음")
 
         track_num = id_to_track.get(student_id, "")
 
         # 4.5 중복 제출 확인 (학번이 확인된 경우 1회만 점수 부여)
-        if student_id != "학번없음":
+        if student_id != ("No ID" if lang == "en" else "학번없음"):
             if student_id in seen_students:
                 continue  # 이미 점수가 기록된 학생의 과거 메일은 스킵
             seen_students.add(student_id)
@@ -113,7 +113,7 @@ def extract_grades(query=None, require_attachment=False):
         # 5. 날짜 파싱 및 마감(1점) 처리
         mail_dt = parse_email_date(date_str)
         score = 0
-        formatted_date = "알수없음"
+        formatted_date = "Unknown" if lang == "en" else "알수없음"
 
         # 쿼리에서 과제 번호 추출 (예: '과제 0.4 | assignment 0.4' -> '0.4', '과제 0.a' -> '0.a')
         q_match = re.search(r"\d+(?:\.[\da-zA-Z]+)?", current_query)
@@ -121,10 +121,16 @@ def extract_grades(query=None, require_attachment=False):
 
         if task_num == "0.10":
             task_num = "0.a"
+        elif task_num == "0.11":
+            task_num = "0.b"
 
-        task_prefix = f"과제{task_num} " if task_num else "과제 "
-
-        reason = f"{task_prefix.strip()} 마감시간초과"
+        if lang == "en":
+            task_prefix = f"Task {task_num} " if task_num else "Task "
+            reason = f"{task_prefix.strip()} Late submission"
+        else:
+            task_prefix = f"과제{task_num} " if task_num else "과제 "
+            reason = f"{task_prefix.strip()} 마감시간초과"
+            
         has_att = email_data.get("has_attachment", False)
 
         if mail_dt:
@@ -141,11 +147,11 @@ def extract_grades(query=None, require_attachment=False):
                 if is_attachment_required:
                     if not has_att:
                         base_score -= 1.0
-                        violations.append("첨부없음")
+                        violations.append("No attachment" if lang == "en" else "첨부없음")
                 else:
                     if has_att:
                         base_score -= 1.0
-                        violations.append("첨부있음")
+                        violations.append("Attachment included" if lang == "en" else "첨부있음")
 
                 # 제목 양식 검사
                 # 띄어쓰기나 대괄호 없이 '과제0.X학번' 또는 'assignment0.X학번'
@@ -153,6 +159,8 @@ def extract_grades(query=None, require_attachment=False):
 
                 if task_num == "0.a":
                     task_regex_part = r"(0\.a|0\.10)"
+                elif task_num == "0.b":
+                    task_regex_part = r"(0\.b|0\.11)"
                 else:
                     task_regex_part = task_num.replace(".", r"\.") if task_num else ""
 
@@ -164,14 +172,14 @@ def extract_grades(query=None, require_attachment=False):
 
                 if not is_exact_title:
                     base_score -= 0.2
-                    violations.append("제목양식오류")
+                    violations.append("Title format error" if lang == "en" else "제목양식오류")
 
                 if not violations:
                     score = 2.0
-                    reason = "정확한 양식/조건충족(+2)"
+                    reason = "Met all conditions (+2)" if lang == "en" else "정확한 양식/조건충족(+2)"
                 else:
                     score = round(base_score, 1)
-                    reason = f"조건위반({','.join(violations)})"
+                    reason = f"Violation({','.join(violations)})" if lang == "en" else f"조건위반({','.join(violations)})"
 
         output_rows.append(
             [
@@ -187,7 +195,7 @@ def extract_grades(query=None, require_attachment=False):
             ]
         )
 
-    output_path = os.path.join(base_dir, "output", "grades_output.csv")
+    output_path = os.path.join(base_dir, "9output", "grades_output.csv")
     with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f)
         writer.writerows(output_rows)
@@ -220,6 +228,13 @@ if __name__ == "__main__":
         action="store_true",
         help="첨부 파일이 있어야 정상으로 간주",
     )
+    parser.add_argument(
+        "--lang",
+        type=str,
+        default="ko",
+        choices=["ko", "en"],
+        help="출력 언어 (ko 또는 en)",
+    )
     args = parser.parse_args()
 
-    extract_grades(query=args.query, require_attachment=args.require_attachment)
+    extract_grades(query=args.query, require_attachment=args.require_attachment, lang=args.lang)

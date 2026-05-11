@@ -116,12 +116,27 @@ def extract_gmail_interactive(
         before_str = (deadline_dt + timedelta(days=1)).strftime("%Y/%m/%d")
 
         if target_week:
-            search_query = (
-                f'("과제 0.{target_week}" OR "과제0.{target_week}" OR '
-                f'"assignment 0.{target_week}" OR "assignment0.{target_week}") '
-                f"after:{after_str} before:{before_str} "
-                f"-from:comments-noreply@docs.google.com -from:wonhyukc@stu.ac.kr"
-            )
+            if target_week == "a":
+                search_query = (
+                    f'("과제 0.a" OR "과제0.a" OR "assignment 0.a" OR "assignment0.a" OR '
+                    f'"과제 0.10" OR "과제0.10" OR "assignment 0.10" OR "assignment0.10") '
+                    f"after:{after_str} before:{before_str} "
+                    f"-from:comments-noreply@docs.google.com -from:wonhyukc@stu.ac.kr"
+                )
+            elif target_week == "b":
+                search_query = (
+                    f'("과제 0.b" OR "과제0.b" OR "assignment 0.b" OR "assignment0.b" OR '
+                    f'"과제 0.11" OR "과제0.11" OR "assignment 0.11" OR "assignment0.11") '
+                    f"after:{after_str} before:{before_str} "
+                    f"-from:comments-noreply@docs.google.com -from:wonhyukc@stu.ac.kr"
+                )
+            else:
+                search_query = (
+                    f'("과제 0.{target_week}" OR "과제0.{target_week}" OR '
+                    f'"assignment 0.{target_week}" OR "assignment0.{target_week}") '
+                    f"after:{after_str} before:{before_str} "
+                    f"-from:comments-noreply@docs.google.com -from:wonhyukc@stu.ac.kr"
+                )
         else:
             search_query = (
                 f'("과제" OR "assignment") after:{after_str} '
@@ -283,8 +298,15 @@ def extract_gmail_interactive(
 
                         # Strict exact title check (no brackets, exactly (과제|assignment)0.X학번)
                         week_val = target_week if target_week else found_week
+                        if week_val == "a":
+                            regex_str = r"^(과제|assignment)0?\.(a|10)(\d{10})$"
+                        elif week_val == "b":
+                            regex_str = r"^(과제|assignment)0?\.(b|11)(\d{10})$"
+                        else:
+                            regex_str = rf"^(과제|assignment)0?\.{week_val}(\d{{10}})$"
+                            
                         exact_title_re = re.compile(
-                            rf"^(과제|assignment)0?\.{week_val}(\d{{10}})$",
+                            regex_str,
                             re.IGNORECASE,
                         )
                         is_exact_title = bool(exact_title_re.match(clean_sub))
