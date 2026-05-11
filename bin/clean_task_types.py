@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import os
+import re
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -58,8 +59,8 @@ def clean_sheet(course):
                 .strip()
             )
 
-            if clean_val.lower() == "lab5" or clean_val.lower() == "lab 5":
-                clean_val = "5"
+            # Lab 1, Lab2 등 모든 Lab 유형의 'Lab' 접두어 제거
+            clean_val = re.sub(r"(?i)^lab\s*", "", clean_val)
 
             # 비정상 데이터 식별 (날짜 포맷이나 의미 없는 문자열 등)
             if "/" in clean_val:
