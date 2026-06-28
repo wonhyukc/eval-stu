@@ -21,7 +21,8 @@ def get_sheet_title(service, gid):
 
 
 def main():
-    service = get_sheet_service()
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    service = get_sheet_service(base_dir)
 
     target_title = get_sheet_title(service, TARGET_GID)
     source_title = get_sheet_title(service, SOURCE_GID)
