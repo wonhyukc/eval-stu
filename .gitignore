@@ -31,3 +31,4 @@ output/
 *.tsv
 *.txt
 gwsServiceAccnt-mail.json
+.vscode/
