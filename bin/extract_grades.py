@@ -66,7 +66,9 @@ def save_settings(settings):
         json.dump(settings, f, ensure_ascii=False, indent=4)
 
 
-def extract_grades(course="py", query=None, require_attachment=False, lang="ko"):
+def extract_grades(
+    course="py", query=None, require_attachment=False, lang="ko", local_csv=None
+):
     settings = load_settings()
 
     course_config = settings.get("courses", {}).get(course)
@@ -87,6 +89,25 @@ def extract_grades(course="py", query=None, require_attachment=False, lang="ko")
             print(f"📝 settings.json 의 검색 쿼리가 업데이트 되었습니다: '{query}'")
 
     current_query = settings.get("gmail_search_query", "과제 0.4 | assignment 0.4")
+
+    # 12주차 특별 복합 쿼리 처리 (0.c, 0.12, 0.b 제목을 모두 지원)
+    if (
+        "0.c" in current_query
+        or "0.12" in current_query
+        or "0.b" in current_query
+        or (query and ("0.c" in query or "0.12" in query or "0.b" in query))
+    ):
+        if course == "py":
+            current_query = (
+                '("과제 0.c" OR "과제 0.b" OR "과제 0.12" '
+                'OR "과제0.c" OR "과제0.b" OR "과제0.12")'
+            )
+        else:
+            current_query = (
+                '("assignment 0.c" OR "assignment 0.b" OR "assignment 0.12" '
+                'OR "assignment0.c" OR "assignment0.b" OR "assignment0.12")'
+            )
+
     print(f"🔍 다음 쿼리 규칙으로 메일을 수집합니다: [{current_query}]")
 
     allowed_tracks = course_config.get("tracks", [])
@@ -94,8 +115,17 @@ def extract_grades(course="py", query=None, require_attachment=False, lang="ko")
 
     id_to_track, name_to_id = get_student_tracks(base_dir)
 
-    deadline_dt = datetime.strptime("2026-04-20 09:00:00", "%Y-%m-%d %H:%M:%S")
-    emails = fetch_assignment_emails(current_query, max_results=50)
+    # 12주차인 경우 마감일을 2026-06-01 09:00:00으로 설정, 그 외는 기존 디폴트 유지
+    if (
+        "0.c" in current_query
+        or "0.12" in current_query
+        or "0.b" in current_query
+        or "0.b" in (query or "")
+        or "0.c" in (query or "")
+    ):
+        deadline_dt = datetime.strptime("2026-06-01 09:00:00", "%Y-%m-%d %H:%M:%S")
+    else:
+        deadline_dt = datetime.strptime("2026-04-20 09:00:00", "%Y-%m-%d %H:%M:%S")
 
     # 제외할 본인 이메일 (발송한 메일 제외)
     my_email_patterns = ["wonhyukc@stu.ac.kr"]
@@ -108,6 +138,52 @@ def extract_grades(course="py", query=None, require_attachment=False, lang="ko")
     output_rows.append(
         ["no", "학번", "track", "점수", "유형", "이유", "날짜", "이름", "메일제목"]
     )
+
+    if local_csv:
+        if not os.path.exists(local_csv):
+            print(f"❌ 오류: 로컬 CSV 파일 '{local_csv}'을 찾을 수 없습니다.")
+            return
+
+        print(
+            f"📄 로컬 CSV 파일 [{local_csv}] 로드하여 시트에 기록할 데이터를 준비합니다."
+        )
+        with open(local_csv, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row_data in reader:
+                student_id = row_data.get("학번", "").strip()
+                track_num = row_data.get("track", "").strip()
+
+                # 과정별 허용된 트랙인지 확인 (예: 웹은 761, 762만)
+                if allowed_tracks and track_num not in allowed_tracks:
+                    continue
+
+                try:
+                    score = float(row_data.get("점수", 0.0))
+                except ValueError:
+                    score = 0.0
+
+                task_num = row_data.get("유형", "").strip()
+                reason = row_data.get("이유", "").strip()
+                formatted_date = row_data.get("날짜", "").strip()
+                name = row_data.get("이름", "").strip()
+                short_subject = row_data.get("메일제목", "").strip()[:20]
+
+                output_rows.append(
+                    [
+                        "",
+                        student_id,
+                        track_num,
+                        score,
+                        task_num,
+                        reason,
+                        formatted_date,
+                        name,
+                        short_subject,
+                    ]
+                )
+        emails = []
+    else:
+        emails = fetch_assignment_emails(current_query, max_results=50)
 
     for email_data in emails:
         subject = email_data.get("subject", "")
@@ -166,10 +242,16 @@ def extract_grades(course="py", query=None, require_attachment=False, lang="ko")
         q_match = re.search(r"\d+(?:\.[\da-zA-Z]+)?", current_query)
         task_num = q_match.group(0) if q_match else ""
 
+        # 복합 쿼리 등으로 12주차 메일을 긁어오는 경우 task_num을 '0.c'로 명시적으로 맞춤
+        if "0.c" in current_query or "0.12" in current_query or "0.b" in current_query:
+            task_num = "0.c"
+
         if task_num == "0.10":
             task_num = "0.a"
         elif task_num == "0.11":
             task_num = "0.b"
+        elif task_num == "0.12" or task_num == "0.c":
+            task_num = "0.c"
 
         if lang == "en":
             task_prefix = f"Task {task_num} " if task_num else "Task "
@@ -205,13 +287,15 @@ def extract_grades(course="py", query=None, require_attachment=False, lang="ko")
                         )
 
                 # 제목 양식 검사
-                # 띄어쓰기나 대괄호 없이 '과제0.X학번' 또는 'assignment0.X학번'
                 clean_sub = re.sub(r"\s+", "", subject.lower())
 
                 if task_num == "0.a":
                     task_regex_part = r"(0\.a|0\.10)"
                 elif task_num == "0.b":
                     task_regex_part = r"(0\.b|0\.11)"
+                elif task_num == "0.c":
+                    # 12주차 정상 제목은 0.c 또는 0.b
+                    task_regex_part = r"(0\.c|0\.b)"
                 else:
                     task_regex_part = task_num.replace(".", r"\.") if task_num else ""
 
@@ -221,26 +305,45 @@ def extract_grades(course="py", query=None, require_attachment=False, lang="ko")
                 )
                 is_exact_title = bool(exact_title_re.match(clean_sub))
 
-                if not is_exact_title:
-                    base_score -= 0.2
-                    violations.append(
-                        "Title format error" if lang == "en" else "제목양식오류"
-                    )
-
-                if not violations:
-                    score = 2.0
-                    reason = (
-                        "Met all conditions (+2)"
-                        if lang == "en"
-                        else "정확한 양식/조건충족(+2)"
-                    )
+                # 12주차(0.c) 특별 감점 규칙
+                if task_num == "0.c":
+                    if is_exact_title:
+                        score = round(base_score, 1)
+                        if not violations:
+                            reason = "정확한 양식/조건충족(+2)"
+                        else:
+                            reason = f"조건위반({','.join(violations)})"
+                    elif "0.12" in clean_sub:
+                        base_score -= 0.3
+                        violations.append("제목오류(0.12)")
+                        score = round(base_score, 1)
+                        reason = f"조건위반({','.join(violations)})"
+                    else:
+                        base_score -= 0.2
+                        violations.append("제목양식오류")
+                        score = round(base_score, 1)
+                        reason = f"조건위반({','.join(violations)})"
                 else:
-                    score = round(base_score, 1)
-                    reason = (
-                        f"Violation({','.join(violations)})"
-                        if lang == "en"
-                        else f"조건위반({','.join(violations)})"
-                    )
+                    if not is_exact_title:
+                        base_score -= 0.2
+                        violations.append(
+                            "Title format error" if lang == "en" else "제목양식오류"
+                        )
+
+                    if not violations:
+                        score = 2.0
+                        reason = (
+                            "Met all conditions (+2)"
+                            if lang == "en"
+                            else "정확한 양식/조건충족(+2)"
+                        )
+                    else:
+                        score = round(base_score, 1)
+                        reason = (
+                            f"Violation({','.join(violations)})"
+                            if lang == "en"
+                            else f"조건위반({','.join(violations)})"
+                        )
 
         output_rows.append(
             [
@@ -311,6 +414,12 @@ if __name__ == "__main__":
         choices=["ko", "en"],
         help="출력 언어 (ko 또는 en)",
     )
+    parser.add_argument(
+        "--local-csv",
+        type=str,
+        default=None,
+        help="Gmail API 연동 대신 로컬에 이미 추출된 CSV 결과를 읽어 시트에 기록",
+    )
     args = parser.parse_args()
 
     extract_grades(
@@ -318,4 +427,5 @@ if __name__ == "__main__":
         query=args.query,
         require_attachment=args.require_attachment,
         lang=args.lang,
+        local_csv=args.local_csv,
     )

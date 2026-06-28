@@ -310,6 +310,9 @@ def extract_gmail_interactive(
                             regex_str = r"^(과제|assignment)0?\.(a|10)(\d{10})$"
                         elif week_val == "b":
                             regex_str = r"^(과제|assignment)0?\.(b|11)(\d{10})$"
+                        elif week_val == "c":
+                            # 12주차 정상 제목은 0.c 또는 0.b
+                            regex_str = r"^(과제|assignment)0?\.(c|b)(\d{10})$"
                         else:
                             regex_str = rf"^(과제|assignment)0?\.{week_val}(\d{{10}})$"
 
@@ -319,16 +322,37 @@ def extract_gmail_interactive(
                         )
                         is_exact_title = bool(exact_title_re.match(clean_sub))
 
-                        if not is_exact_title:
-                            base_score -= 0.2
-                            violations.append("제목양식오류")
-
-                        if not violations:
-                            score = 2
-                            reason = "정확한 양식/조건충족(+2)"
+                        # 12주차(c) 특별 감점 규칙 적용
+                        if week_val == "c":
+                            if is_exact_title:
+                                score = round(base_score, 1)
+                                if not violations:
+                                    reason = "정확한 양식/조건충족(+2)"
+                                else:
+                                    reason = (
+                                        f"조건위반({','.join(violations)}) ({score})"
+                                    )
+                            elif "0.12" in clean_sub:
+                                base_score -= 0.3
+                                violations.append("제목오류(0.12)")
+                                score = round(base_score, 1)
+                                reason = f"조건위반({','.join(violations)}) ({score})"
+                            else:
+                                base_score -= 0.2
+                                violations.append("제목양식오류")
+                                score = round(base_score, 1)
+                                reason = f"조건위반({','.join(violations)}) ({score})"
                         else:
-                            score = round(base_score, 1)
-                            reason = f"조건위반({','.join(violations)}) ({score})"
+                            if not is_exact_title:
+                                base_score -= 0.2
+                                violations.append("제목양식오류")
+
+                            if not violations:
+                                score = 2
+                                reason = "정확한 양식/조건충족(+2)"
+                            else:
+                                score = round(base_score, 1)
+                                reason = f"조건위반({','.join(violations)}) ({score})"
                     else:
                         score = 0
                         reason = "타주차 과제(수동확인)"
