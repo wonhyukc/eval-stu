@@ -4,5 +4,7 @@ exclude = '''
     \.git
   | \.venv
   | input
+  | tmp
+  | 9output
 )/
 '''

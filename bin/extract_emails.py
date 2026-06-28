@@ -1,4 +1,5 @@
 import os
+import sys
 import csv
 import re
 import argparse
@@ -7,6 +8,11 @@ from urllib.parse import unquote
 import time
 import email.utils
 from playwright.sync_api import sync_playwright
+
+# 프로젝트 루트 경로를 sys.path에 추가
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if base_dir not in sys.path:
+    sys.path.append(base_dir)
 
 KST = timezone(timedelta(hours=9))
 
@@ -17,6 +23,8 @@ def parse_students():
     id_to_names = {}
     base_dir = os.path.dirname(os.path.dirname(__file__))
     for filepath in [
+        os.path.join(base_dir, "5input/students/py-students.md"),
+        os.path.join(base_dir, "5input/students/wb-students.md"),
         os.path.join(base_dir, "input/students/py-students.md"),
         os.path.join(base_dir, "input/students/wb-students.md"),
     ]:
@@ -82,18 +90,18 @@ def extract_gmail_interactive(
     new_rows = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(
+        user_data_dir = os.path.join(base_dir, ".bin", "playwright_user_data")
+        context = p.chromium.launch_persistent_context(
+            user_data_dir,
             headless=False,
             channel="chrome",
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
+            ),
+            args=["--disable-blink-features=AutomationControlled"],
         )
-        page = context.new_page()
+        page = context.pages[0] if context.pages else context.new_page()
 
         print("Navigating to mail.google.com...")
         page.goto("https://mail.google.com/")
@@ -106,7 +114,7 @@ def extract_gmail_interactive(
             print("로그인 확인 완료! 받은편지함 진입 성공.")
         except Exception:
             print("3분 내에 로그인이 확인되지 않거나 Inbox를 렌더링하지 못했습니다.")
-            browser.close()
+            context.close()
             return
 
         page.wait_for_timeout(2000)
@@ -344,7 +352,7 @@ def extract_gmail_interactive(
             new_rows.append(row_data)
             print(f" -> 성공적 파싱: {est_id} ({sender}) | 점수: {score} | {reason}")
 
-        browser.close()
+        context.close()
 
     if new_rows:
         out_dir = os.path.join(os.path.dirname(__file__), "../output")
@@ -380,6 +388,316 @@ def extract_gmail_interactive(
         print("\n========= 조건에 맞는 저장할 데이터가 없습니다. =========")
 
 
+def run_all_grading_interactive():
+    print("Loading student roster...")
+    name_to_id, id_to_track, id_to_names = parse_students()
+
+    # py 트랙 고정 (468)
+    allowed_tracks = ["468"]
+
+    # 사용자 정의 마감 및 과제 설정
+    assignments_config = {
+        "0.7": {
+            "week_name": "0.7",
+            "start_time": "2026-04-13 09:00:00",
+            "deadline": "2026-04-20 09:00:00",
+            "queries": ["과제 0.7", "assignment 0.7"],
+            "require_attachment": True,
+        },
+        "0.a": {
+            "week_name": "0.a",
+            "start_time": "2026-04-27 09:00:00",
+            "deadline": "2026-05-11 09:00:00",
+            "queries": [
+                "과제 0.9",
+                "assignment 0.9",
+                "과제 0.a",
+                "assignment 0.a",
+                "과제 0.10",
+                "assignment 0.10",
+            ],
+            "require_attachment": False,
+        },
+        "0.b": {
+            "week_name": "0.b",
+            "start_time": "2026-05-04 09:00:00",
+            "deadline": "2026-05-18 09:00:00",
+            "queries": ["과제 0.b", "assignment 0.b", "과제 0.11", "assignment 0.11"],
+            "require_attachment": False,
+        },
+        "0.c": {
+            "week_name": "0.c",
+            "start_time": "2026-05-11 09:00:00",
+            "deadline": "2026-05-25 09:00:00",
+            "queries": ["과제 0.c", "assignment 0.c", "과제 0.12", "assignment 0.12"],
+            "require_attachment": False,
+        },
+    }
+
+    with sync_playwright() as p:
+        user_data_dir = os.path.join(base_dir, ".bin", "playwright_user_data")
+        context = p.chromium.launch_persistent_context(
+            user_data_dir,
+            headless=False,
+            channel="chrome",
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ),
+        )
+        page = context.new_page()
+
+        print("Navigating to mail.google.com...")
+        page.goto("https://mail.google.com/")
+        print(
+            ">>> 브라우저가 화면에 팝업되었습니다. 직접 로그인해주세요! (최대 3분 대기) <<<"
+        )
+
+        try:
+            page.wait_for_selector('input[name="q"]', timeout=180000)
+            print("로그인 확인 완료! 받은편지함 진입 성공.")
+        except Exception:
+            print("3분 내에 로그인이 확인되지 않았습니다.")
+            context.close()
+            return
+
+        page.wait_for_timeout(2000)
+
+        for task_key, config in assignments_config.items():
+            print(
+                f"\n==================== 과제 {task_key} 채점 시작 ===================="
+            )
+            deadline_dt = datetime.strptime(
+                config["deadline"], "%Y-%m-%d %H:%M:%S"
+            ).replace(tzinfo=KST)
+            start_dt = datetime.strptime(
+                config["start_time"], "%Y-%m-%d %H:%M:%S"
+            ).replace(tzinfo=KST)
+
+            # Gmail 검색 쿼리 구성
+            or_parts = []
+            for q in config["queries"]:
+                q_no_space = q.replace(" ", "")
+                or_parts.append(f'"{q}"')
+                or_parts.append(f'"{q_no_space}"')
+
+            after_str = (start_dt - timedelta(days=1)).strftime("%Y/%m/%d")
+            before_str = (deadline_dt + timedelta(days=1)).strftime("%Y/%m/%d")
+
+            or_joined = " OR ".join(or_parts)
+            query_str = (
+                f"({or_joined}) after:{after_str} before:{before_str} "
+                "-from:comments-noreply@docs.google.com -from:wonhyukc@stu.ac.kr"
+            )
+
+            print(f"Gmail 검색 쿼리: {query_str}")
+            page.fill('input[name="q"]', query_str)
+            page.keyboard.press("Enter")
+
+            print("검색 결과 대기 중...")
+            page.wait_for_timeout(5000)
+
+            rows = page.locator("tr.zA")
+            count = rows.count()
+            print(f"총 {count}개의 검색된 이메일을 발견했습니다.")
+
+            seen_ids = set()
+            new_rows = []
+
+            for i in range(count):
+                row = rows.nth(i)
+                try:
+                    sub_loc = row.locator("span.bog")
+                    subject = (
+                        sub_loc.inner_text().strip() if sub_loc.count() > 0 else ""
+                    )
+
+                    sender_loc = row.locator("div.yW span[name]")
+                    if sender_loc.count() > 0:
+                        sender = (
+                            sender_loc.first.get_attribute("name")
+                            or sender_loc.first.inner_text()
+                        )
+                    else:
+                        sender = ""
+
+                    date_loc = row.locator("td.xW span")
+                    date_str = (
+                        date_loc.first.get_attribute("title")
+                        if date_loc.count() > 0
+                        else ""
+                    )
+                    if not date_str and date_loc.count() > 0:
+                        date_str = date_loc.first.inner_text()
+                    if not date_str:
+                        date_str = "Thu, 9 Apr 2026 12:00:00 +0900"
+
+                    sender_lower = sender.lower()
+                    if "me" == sender_lower or "wonhyukc@stu.ac.kr" in sender_lower:
+                        continue
+
+                    email_dt = None
+                    try:
+                        email_dt = email.utils.parsedate_to_datetime(date_str)
+                        if email_dt.tzinfo is None:
+                            email_dt = email_dt.replace(tzinfo=timezone.utc).astimezone(
+                                KST
+                            )
+                        else:
+                            email_dt = email_dt.astimezone(KST)
+                    except Exception:
+                        pass
+
+                    if email_dt and email_dt > deadline_dt:
+                        print(f" -> 지각 제외: {date_str} ({subject})")
+                        continue
+                    if email_dt and email_dt < start_dt:
+                        print(f" -> 기간 이전 제외: {date_str} ({subject})")
+                        continue
+
+                    has_att = (
+                        row.locator("img.yE").count() > 0
+                        or row.locator('[aria-label="Attachment"]').count() > 0
+                        or "Attachment" in row.inner_html()
+                    )
+                except Exception as _e:
+                    print(f"Row {i} 파싱 에러: {_e}")
+                    continue
+
+                subject_lower = subject.lower()
+                clean_sub = re.sub(r"\s+", "", subject_lower)
+
+                # 학번 파싱
+                est_id = ""
+                m_id = re.search(r"\d{8,11}", subject)
+                if m_id:
+                    est_id = m_id.group(0)
+                else:
+                    clean_name = re.sub(r"\s+", "", sender).lower()
+                    if clean_name in name_to_id:
+                        est_id = name_to_id[clean_name]
+                    else:
+                        sender_email = sender.split("<")[-1].strip(">").lower()
+                        if sender_email in name_to_id:
+                            est_id = name_to_id[sender_email]
+
+                if not est_id:
+                    est_id = "학번없음"
+
+                track_num = id_to_track.get(est_id, "")
+                if track_num not in allowed_tracks:
+                    continue
+
+                if est_id != "학번없음":
+                    if est_id in seen_ids:
+                        print(f" -> 중복 제외 (과거 메일 무시): {est_id} ({sender})")
+                        continue
+                    seen_ids.add(est_id)
+
+                score = 0
+                reason = ""
+                if est_id == "학번없음":
+                    score = 0
+                    reason = "학번 식별 불가"
+                else:
+                    base_score = 2.0
+                    violations = []
+
+                    if config["require_attachment"]:
+                        if not has_att:
+                            base_score -= 1.0
+                            violations.append("첨부없음")
+                    else:
+                        if has_att:
+                            base_score -= 1.0
+                            violations.append("첨부있음")
+
+                    is_exact_title = False
+                    for q in config["queries"]:
+                        q_clean = q.replace(" ", "").lower()
+                        q_pattern = re.escape(q_clean)
+                        if re.match(rf"^{q_pattern}\d{{8,11}}$", clean_sub):
+                            is_exact_title = True
+                            break
+
+                    if not is_exact_title:
+                        base_score -= 0.2
+                        violations.append("제목양식오류")
+
+                    if not violations:
+                        score = 2.0
+                        reason = "정확한 양식/조건충족(+2)"
+                    else:
+                        score = round(base_score, 1)
+                        reason = f"조건위반({','.join(violations)})"
+
+                formatted_date = (
+                    f"{email_dt.month}/{email_dt.day} {email_dt.strftime('%H:%M')}"
+                    if email_dt
+                    else "알수없음"
+                )
+
+                row_data = {
+                    "no": "",
+                    "학번": est_id,
+                    "track": track_num,
+                    "점수": score,
+                    "유형": config["week_name"],
+                    "이유": reason,
+                    "날짜": formatted_date,
+                    "이름": sender[:20],
+                    "메일제목": subject[:20],
+                }
+                new_rows.append(row_data)
+                print(f" -> 채점 성공: {est_id} ({sender}) | 점수: {score} | {reason}")
+
+            if new_rows:
+                out_dir = "9output"
+                os.makedirs(out_dir, exist_ok=True)
+                out_path = os.path.join(out_dir, f"grades_output_{task_key}_py.csv")
+
+                fieldnames = [
+                    "no",
+                    "학번",
+                    "track",
+                    "점수",
+                    "유형",
+                    "이유",
+                    "날짜",
+                    "이름",
+                    "메일제목",
+                ]
+                with open(out_path, "w", encoding="utf-8-sig", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(new_rows)
+                print(f"✅ CSV 저장 완료: {out_path}")
+
+                data_to_append = []
+                for nr in new_rows:
+                    data_to_append.append(
+                        [
+                            "",
+                            nr["학번"],
+                            nr["track"],
+                            nr["점수"],
+                            nr["유형"],
+                            nr["이유"],
+                            nr["날짜"],
+                            nr["이름"],
+                            nr["메일제목"],
+                        ]
+                    )
+
+                print(f"구글 시트에 '{config['week_name']}' 과제 데이터 추가 시도...")
+                from modules.sheet_updater import append_grades_to_sheet
+
+                append_grades_to_sheet(data_to_append, course="py")
+            else:
+                print(f"⚠️ 과제 {task_key}에 대해 저장할 데이터가 없습니다.")
+        context.close()
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("📧 [Gmail 과제 이메일 추출기] 실행 안내")
@@ -405,14 +723,22 @@ if __name__ == "__main__":
         action="store_true",
         help="첨부 파일이 있어야 정상으로 간주",
     )
+    parser.add_argument(
+        "--run-all",
+        action="store_true",
+        help="py 과정의 0.7 ~ 0.c 과제를 일괄적으로 대화형 스크래핑 및 채점 진행",
+    )
     args = parser.parse_args()
 
     track_map = {"py": "468", "web1": "761", "web2": "762"}
     allowed_tracks = [track_map[t] for t in args.tracks if t in track_map]
 
-    extract_gmail_interactive(
-        target_week=args.week,
-        allowed_tracks=allowed_tracks,
-        track_names=args.tracks,
-        require_attachment=args.require_attachment,
-    )
+    if args.run_all:
+        run_all_grading_interactive()
+    else:
+        extract_gmail_interactive(
+            target_week=args.week,
+            allowed_tracks=allowed_tracks,
+            track_names=args.tracks,
+            require_attachment=args.require_attachment,
+        )

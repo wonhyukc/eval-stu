@@ -32,3 +32,5 @@ output/
 *.txt
 gwsServiceAccnt-mail.json
 .vscode/
+tmp/
+9output/
