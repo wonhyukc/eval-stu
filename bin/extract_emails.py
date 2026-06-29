@@ -90,7 +90,7 @@ def extract_gmail_interactive(
     new_rows = []
 
     with sync_playwright() as p:
-        user_data_dir = os.path.join(base_dir, ".bin", "playwright_user_data")
+        user_data_dir = os.path.expanduser("~/.config/google-chrome")
         context = p.chromium.launch_persistent_context(
             user_data_dir,
             headless=False,
@@ -99,7 +99,10 @@ def extract_gmail_interactive(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             ),
-            args=["--disable-blink-features=AutomationControlled"],
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--profile-directory=Profile 10",
+            ],
         )
         page = context.pages[0] if context.pages else context.new_page()
 
@@ -459,7 +462,7 @@ def run_all_grading_interactive():
     }
 
     with sync_playwright() as p:
-        user_data_dir = os.path.join(base_dir, ".bin", "playwright_user_data")
+        user_data_dir = os.path.expanduser("~/.config/google-chrome")
         context = p.chromium.launch_persistent_context(
             user_data_dir,
             headless=False,
@@ -468,6 +471,7 @@ def run_all_grading_interactive():
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             ),
+            args=["--profile-directory=Profile 10"],
         )
         page = context.new_page()
 
