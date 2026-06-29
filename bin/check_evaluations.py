@@ -38,6 +38,9 @@ def main():
     parser.add_argument(
         "--offline", action="store_true", help="Use local CSV (output/sample_data.csv)"
     )
+    parser.add_argument(
+        "--upload", action="store_true", help="Upload graded results to Google Sheets"
+    )
     args = parser.parse_args()
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,8 +52,10 @@ def main():
     )
 
     track_map = build_track_map(base_dir)
+    print(f"DEBUG: sheet_id={sheet_id}")
 
     print(f"🚀 [상호평가 다수결 채점 엔진 시작] {args.course}-{args.week}")
+    print(f"DEBUG: base_dir={base_dir}, secret_path={secret_path}")
 
     values = []
     if args.offline:
@@ -63,35 +68,27 @@ def main():
             reader = csv.reader(f)
             values = list(reader)
     else:
-        try:
-            creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)
-            service = build("sheets", "v4", credentials=creds, cache_discovery=False)
+        creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)
+        service = build("sheets", "v4", credentials=creds, cache_discovery=False)
+        sheet_metadata = service.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        target_gid = 1491146932
+        sheet_title = None
+        for s in sheet_metadata.get("sheets", []):
+            if s["properties"].get("sheetId") == target_gid:
+                sheet_title = s["properties"]["title"]
+                break
 
-            # Find the exact worksheet
-            sheet_metadata = (
-                service.spreadsheets().get(spreadsheetId=sheet_id).execute()
-            )
-            target_gid = 1491146932
-            sheet_title = None
-            for s in sheet_metadata.get("sheets", []):
-                if s["properties"].get("sheetId") == target_gid:
-                    sheet_title = s["properties"]["title"]
-                    break
+        if not sheet_title:
+            sheet_title = sheet_metadata.get("sheets", [])[0]["properties"]["title"]
 
-            if not sheet_title:
-                sheet_title = sheet_metadata.get("sheets", [])[0]["properties"]["title"]
-
-            range_name = f"{sheet_title}!A:Z"
-            result = (
-                service.spreadsheets()
-                .values()
-                .get(spreadsheetId=sheet_id, range=range_name)
-                .execute()
-            )
-            values = result.get("values", [])
-        except Exception as e:
-            print(f"❌ 구글 시트 오류: {e}")
-            sys.exit(1)
+        range_name = f"{sheet_title}!A:Z"
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=sheet_id, range=range_name)
+            .execute()
+        )
+        values = result.get("values", [])
 
     if not values:
         print("💡 데이터가 없습니다.")
@@ -99,6 +96,7 @@ def main():
 
     headers = values[0]
     evaluator_idx, target_idx = -1, -1
+    week_idx = -1
     score_idxs = []
 
     for i, h in enumerate(headers):
@@ -111,6 +109,8 @@ def main():
             evaluator_idx = i
         elif "제출자" in h_str or "피평가자" in h_str or "Reviewee" in h_str:
             target_idx = i
+        elif "평가 주차" in h_str or "Week" in h_str:
+            week_idx = i
         elif "Q" in h_str and ("점수" in h_str or "Score" in h_str):
             score_idxs.append(i)
 
@@ -118,11 +118,10 @@ def main():
         evaluator_idx = 3
     if target_idx == -1:
         target_idx = 4
+    if week_idx == -1:
+        week_idx = 2
     if not score_idxs:
         score_idxs = [5, 6, 7, 8, 9, 10, 11, 12, 13]  # fallback
-
-    # Filter to only requested week if offline (assuming column 2 is week)
-    # Actually, we just grade everyone in the sheet.
 
     # 1. Group data
     # evals_by_target = { target_id: [ (evaluator_id, scores_array), ... ] }
@@ -133,9 +132,22 @@ def main():
     # Track maximum observed score per question globally to deduce "Max Score"
     max_scores_per_q = [0.0] * len(score_idxs)
 
+    week_num = str(int(args.week))  # "06" -> "6", "10" -> "10"
+    print(f"🔍 필터링 주차 키워드: '{week_num}' (예: {week_num}주차, Week {week_num})")
+
     for row in values[1:]:
-        if len(row) <= target_idx:
+        if len(row) <= max(target_idx, week_idx):
             continue
+
+        # 주차 필터링
+        row_week = row[week_idx].strip()
+        if not (
+            f"{week_num}주차" in row_week
+            or f"Week {week_num}" in row_week
+            or row_week == week_num
+        ):
+            continue
+
         evaluator = row[evaluator_idx].strip()
         target = row[target_idx].strip()
         if not evaluator or not target:
@@ -197,7 +209,11 @@ def main():
         set(evaluator_points.keys())
     )
 
-    md_path = os.path.join(base_dir, "input", "students", f"{args.course}-students.md")
+    roster_course = "wb" if args.course == "web" else args.course
+    md_path = os.path.join(
+        base_dir, "5input", "students", f"{roster_course}-students.md"
+    )
+    roster_data = []
     if os.path.exists(md_path):
         roster_data = parse_markdown_table(md_path)
         valid_students = {row.get("학번", "") for row in roster_data if row.get("학번")}
@@ -259,6 +275,53 @@ def main():
 
     print(f"✅ 채점 완료. 결과 저장됨: {output_path}")
     print(f"   => 저장 대상 학생 수: {len(final_results)}명")
+
+    # 4. 구글 시트 자동 업로드 (--upload 옵션 지정 시)
+    if getattr(args, "upload", False):
+        print("\n⬇️ 이제 추출된 데이터를 시트에 실제 기록(Append)합니다 ⬇️")
+        from datetime import datetime
+        from modules.sheet_updater import append_grades_to_sheet
+
+        roster_by_sid = {}
+        if roster_data:
+            for row in roster_data:
+                if row.get("학번"):
+                    roster_by_sid[row["학번"]] = row.get("이름", "")
+
+        rows_to_append = []
+        today_str = datetime.today().strftime("%Y-%m-%d")
+        week_type = str(int(args.week))
+        reason_str = f"PeerEval{week_type}"
+
+        for res in final_results:
+            sid = res["학번"]
+            track = res["분반"]
+            score = res["최종획득점수(1.0만점)"]
+            name = roster_by_sid.get(sid, "")
+
+            # format: [no, 학번, track/트랙, 점수, 유형, 이유, 날짜, 이름, 메일제목]
+            rows_to_append.append(
+                [
+                    "",  # no (자동 할당)
+                    sid,
+                    track,
+                    score,
+                    week_type,  # 유형
+                    reason_str,  # 이유
+                    today_str,  # 날짜
+                    name,  # 이름
+                    "Peer Evaluation",  # 메일제목
+                ]
+            )
+
+        if rows_to_append:
+            success = append_grades_to_sheet(rows_to_append, course=args.course)
+            if success:
+                print(f"✅ {args.course} {args.week}주차 상호평가 시트 업로드 성공!")
+            else:
+                print(f"❌ {args.course} {args.week}주차 상호평가 시트 업로드 실패!")
+        else:
+            print("❗ 시트에 추가할 데이터가 없습니다.")
 
 
 if __name__ == "__main__":
