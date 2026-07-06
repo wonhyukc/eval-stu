@@ -1,6 +1,6 @@
 ---
 name: tmt-reviewer
-description: Three 무조건 Team의 Reviewer 페르소나 적용 (테스트 및 품질 관리)
+description: Three Man Team의 Reviewer 페르소나 적용 (테스트 및 품질 관리)
 ---
 
 # Reviewer 역할 지침

@@ -2,9 +2,11 @@ import csv
 import os
 from typing import Dict
 
-input_file = "/home/hyuk/nvme_data/prj/stu/eval/python - score (2).csv"
-out_hw = "/home/hyuk/nvme_data/prj/stu/eval/moodle_score_track_468_과제.tsv"
-out_part = "/home/hyuk/nvme_data/prj/stu/eval/moodle_score_track_468_수업참여.tsv"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+input_file = os.path.join(BASE_DIR, "5input", "python - score (2).csv")
+out_hw = os.path.join(BASE_DIR, "output", "moodle_score_track_468_과제.tsv")
+out_part = os.path.join(BASE_DIR, "output", "moodle_score_track_468_수업참여.tsv")
 
 hw_scores: Dict[str, float] = {}
 part_scores: Dict[str, float] = {}

@@ -11,12 +11,17 @@
 
 ## 📂 주요 디렉터리 및 데이터
 
-- `students/`: 대상 과목 및 학생, 시간표 메타데이터
+- `5input/students/`: 대상 과목 및 학생, 시간표 메타데이터
   - `py-students.md`: 파이썬 분반 목록
   - `wb-students.md`: 웹 프로그래밍 2개 분반 목록
   - `timetable.md`: 전체 시간표
-- `modules/`: 기능별(구글 시트, 이메일 파싱 등) 독립 모듈
-- `bin/`: 프로젝트 린트 및 무결성 검증을 위한 하네스 스크립트 모음 (`harness-check.sh` 등)
+- `5input/py`, `5input/web`: 강의안 저장소(`../stu2603`)의 주차별 산출물로 향하는 심볼릭 링크 (읽기 전용, 항상 상대경로 유지)
+- `1docs/`: 채점 정책·운영 매뉴얼 문서 (`assignment-micro.md`, `scores.md`는 `../stu2603`으로의 심볼릭 링크)
+- `modules/`: 기능별(구글 시트, 이메일 파싱 등) 독립 모듈 (라이브러리 성격)
+- `bin/`: 하네스 검증 스크립트(`harness-check.sh`)와 채점·성적 처리 실행 스크립트(`fetch_gmail.py`, `calculate_final_grades.py` 등)
+- `scripts/`: 일회성 변환·실험 스크립트 (`scripts/test_*.py`는 pytest 테스트가 아닌 실험용 스크립트)
+- `tests/`: pytest 단위 테스트
+- `output/`: 채점·점수 CSV 출력 / `9output/`: 상호평가 배정 md, 등급 산출물 (둘 다 git 미추적)
 
 ---
 

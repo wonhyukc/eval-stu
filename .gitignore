@@ -25,11 +25,11 @@ secret.json
 credentials.json
 token.json
 
+# 학생 개인정보 산출물 — csv/tsv는 커밋 금지 유지
 output/
 .bin/
 *.csv
 *.tsv
-*.txt
 gwsServiceAccnt-mail.json
 .vscode/
 tmp/
