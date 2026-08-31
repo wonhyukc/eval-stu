@@ -1,5 +1,5 @@
 {
-    "gmail_search_query": "과제 0.c",
+    "gmail_search_query": "과제 0.1",
     "assignment_form_sheet_id": "1_o-F6UaQ2WOe0nH2zuT_0xpwiOm1ebmWo2sEQzQptEk",
     "evaluation_form_sheet_id": "166MzQg-W6r9GEynt1bOlr8hUex0Rvx6Yky2ffSVNtKM",
     "courses": {
@@ -7,6 +7,8 @@
             "sheet_id": "1F69Wtmrr3MYMJI8jgjPKBWh3m8tDaX6QyBVDSHH4vEc",
             "target_gid": 1892167835,
             "tracks": [
+                "14712",
+                "04",
                 "468"
             ],
             "output_suffix": "py",
@@ -16,6 +18,10 @@
             "sheet_id": "1XA5Hnu5PEidFMreanPCy1eMrofGiyFDPo4buN3129Mc",
             "target_gid": 1514293361,
             "tracks": [
+                "15143",
+                "15144",
+                "01",
+                "02",
                 "761",
                 "762"
             ],
