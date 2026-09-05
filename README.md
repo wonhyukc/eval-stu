@@ -42,6 +42,15 @@
 
 ---
 
+## 📊 성적 및 학생 관리 (Grade Management)
+
+- **전체 학생**: [전체 학생(Google Sheets)](https://docs.google.com/spreadsheets/d/1lUdHWhyNDTZl9n7s48jn3FCrH6gcbQvGt1nkLBbIM9o/edit?gid=1889091726#gid=1889091726)
+- **통합 학생 성적부**: [통합 학생 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1F69Wtmrr3MYMJI8jgjPKBWh3m8tDaX6QyBVDSHH4vEc/edit?gid=1293028310#gid=1293028310)
+- **웹프로그래밍 (1반 / 2반) 과제 및 성적부**: [web-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=1892167835#gid=1892167835) *(⚠️ 대원칙: 항상 100% 영어 기록)*
+- **수강생 명단 SSOT**: `5input/students/` 디렉터리 (`py-students.md`, `wb-students.md`, `students_summary.md`)
+
+---
+
 ## 📂 주요 디렉터리 및 데이터
 
 - `5input/students/`: 대상 과목 및 학생, 시간표 메타데이터 (총 76명)

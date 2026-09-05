@@ -47,8 +47,19 @@
 
 ## 📊 성적 및 학생 관리 (Grade Management)
 
+- **전체 학생**: [전체 학생(Google Sheets)](https://docs.google.com/spreadsheets/d/1lUdHWhyNDTZl9n7s48jn3FCrH6gcbQvGt1nkLBbIM9o/edit?gid=1889091726#gid=1889091726)
 - **성적 관리 통합 구글 시트**: [학생 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1F69Wtmrr3MYMJI8jgjPKBWh3m8tDaX6QyBVDSHH4vEc/edit?gid=1293028310#gid=1293028310)
+- **웹프로그래밍 (1반 / 2반) 과제 및 성적부**: [web-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=1892167835#gid=1892167835) *(⚠️ 대원칙: 이 시트에 기록할 때는 헤더, 사유, 내용 일체가 항상 100% 영어여야 함)*
 - **학생 명단 SSOT**: `5input/students/` 디렉터리 내의 `py-students.md`, `wb-students.md`, `students_summary.md`
+- **배포 및 공유 자료 언어 정책 (Distribution & Sheet Language Policy)**:
+  - 학생들에게 배포·공유되는 모든 자료(스프레드시트, 과제 피드백, 안내문 등)는 해당 트랙의 강의 언어와 100% 일치하도록 작성한다.
+  - **E트랙 (영어 트랙: 1반 / 2반 웹프로그래밍)**: 헤더뿐만 아니라 **Reason(사유), 상태 등 모든 셀의 내용과 텍스트를 예외 없이 100% 영어**로 작성한다. (`No`, `StudentID`, `Track`, `Score`, `Type`, `Reason`, `Date`, `Name`, `Subject`)
+  - **K트랙 (한국어 트랙: 4반 파이썬)**: 헤더뿐만 아니라 **이유(사유), 상태 등 모든 셀의 내용과 텍스트를 예외 없이 100% 한국어**로 작성한다. (`no`, `학번`, `트랙`, `점수`, `유형`, `이유`, `날짜`, `이름`, `메일제목`)
+- **채점 및 시트 동기화 멱등성 보장 (Idempotency)**:
+  - 동일 스크립트를 여러 번 재실행해도 중복 데이터가 누적되지 않고 항상 단일 상태로 수렴해야 한다.
+  - 학생 1인이 여러 메일을 발송한 경우 **마감 기한 이전의 가장 최신 메일 1건**을 기준으로 채점한다. (마감 전 제출본이 있으면 지각 처리하지 않음)
+  - 구글 시트 연동 시 단순 Append를 금지하고, `(StudentID, Type)` 복합 키 기반의 **Upsert(있으면 갱신, 없으면 추가)**를 적용한다.
+  - 구글 시트의 `Type` 열과 `Subject(메일제목)` 열(I열)은 학번 등 순수 숫자가 오인 변환되는 것을 방지하기 위해 **반드시 항상 문자열(String) 타입으로 강제 포맷팅(' 접두사 적용)**하여 입력한다.
 
 ---
 
