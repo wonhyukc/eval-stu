@@ -3,7 +3,7 @@
 ## 1. 프로젝트 목적 (Purpose)
 - `eval`은 학생들의 성적과 과제를 자동화하여 처리하는 파이썬 기반의 관리 시스템입니다.
 - **SSOT (Single Source of Truth)**: 이 문서는 프로젝트의 전역 설정, 아키텍처 및 전반적인 규칙을 정의하는 유일한 기준 문서입니다.
-- **성적 평가 기준**: 전체 학기 성적 산출 비중(기말 40%, 중간 20%, 과제 20%, 참여도 20%)에 대한 공식 규정은 [`docs/grading-policy.md`](./docs/grading-policy.md) 문서를 따릅니다.
+- **성적 평가 기준**: 전체 학기 성적 산출 비중(Ping/발표 15%, Email 20%, 상호평가 30%, 중간 10%, 기말 20%, 태도 5%, 총 100점 만점)에 대한 공식 규정은 [`1docs/grading-policy.md`](./1docs/grading-policy.md) 및 [`1docs/scores.md`](./1docs/scores.md)를 따릅니다.
 
 ## 2. 주요 기능 및 연동 (Core Features & Integrations)
 1. **Google Sheets API 연동**:
