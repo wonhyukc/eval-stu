@@ -1,6 +1,6 @@
 # AGENTS.md — eval-stu 운영 지침 (SSOT)
 
-이 문서는 `eval-stu` 저장소의 **유일한 규칙 원천(SSOT)**입니다. 학생 평가(과제 수집·채점·성적 관리) 자동화 저장소 운영 지침을 담습니다.
+이 문서는 `eval-stu` 저장소의 **유일한 규칙 원천(SSOT)**입니다. **학생 평가(과제 수집·채점·성적 관리)** 자동화 저장소 운영 지침을 담습니다.
 
 > **⚠️ SSOT 경고**: `.agents/rules/language.md`와 `.agents/rules/rules-project.md`는 **생성 금지**입니다. 모든 규칙은 이 문서(AGENTS.md)에만 정의됩니다. pre-commit 훅이 재생성을 차단합니다.
 
@@ -47,8 +47,9 @@
 
 ## 📊 성적 및 학생 관리 (Grade Management)
 
-- **전체 학생**: [전체 학생(Google Sheets)](https://docs.google.com/spreadsheets/d/1lUdHWhyNDTZl9n7s48jn3FCrH6gcbQvGt1nkLBbIM9o/edit?gid=1889091726#gid=1889091726)
-- **성적 관리 통합 구글 시트**: [파이썬 4반 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit?gid=1514293361#gid=1514293361)
+
+- **전체 학생 (비공유, 교수 전용)**: [전체 학생(Google Sheets)](https://docs.google.com/spreadsheets/d/1lUdHWhyNDTZl9n7s48jn3FCrH6gcbQvGt1nkLBbIM9o/edit?gid=1889091726#gid=1889091726) *(서비스 계정 미공유, 교수 본인만 열람)*
+- **파이썬 4반 성적부**: [파이썬 4반 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit?gid=1514293361#gid=1514293361)
 - **웹프로그래밍 (1반 / 2반) 과제 및 성적부**: [web-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=1892167835#gid=1892167835) *(⚠️ 대원칙: 이 시트에 기록할 때는 헤더, 사유, 내용 일체가 항상 100% 영어여야 함)*
 - **학생 명단 SSOT**: `5input/students/` 디렉터리 내의 `py-students.md`, `wb-students.md`, `students_summary.md`
 - **배포 및 공유 자료 언어 정책 (Distribution & Sheet Language Policy)**:
@@ -75,11 +76,19 @@
 
 ---
 
-## 🔗 강의안 저장소(../stu2603)와의 경계
+## 🔗 형제 저장소와의 경계
+
+### 강의안 저장소 (`../stu2603`)
 
 - 강의안·과제 SSOT는 별도 저장소 `../stu2603`입니다. 이 저장소에서는 **읽기만** 하고, 수정은 stu2603 쪽에서 합니다.
 - 교차 참조는 심볼릭 링크로 연결: `1docs/assignment-micro.md`, `1docs/scores.md`, `5input/py`, `5input/web`
 - 교차 링크는 **항상 상대경로**로 만듭니다(마운트 경로 변경에도 살아남도록). 깨진 링크는 pre-commit 훅이 차단합니다.
+
+### 과목별 교재 폴더 (`../py2608-stu`, `../web2608-stu`)
+
+- `../py2608-stu` — 파이썬 4반 (K트랙) 교재·과제 자료
+- `../web2608-stu` — 웹 1반/2반 (E트랙) 교재·과제 자료
+- 이 저장소(`eval-stu`)에서 **채점·성적 기록·이메일 답장 발송**을 수행합니다.
 
 ---
 

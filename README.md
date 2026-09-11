@@ -1,14 +1,18 @@
-# 서울신학대학교 2026-2학기 eval(py-stu) 학생 평가 관리 시스템
+# 서울신학대학교 2026-2학기 eval-stu — 학생 평가·채점·성적 관리
 
-학생들의 성적과 과제 제출 내역을 자동으로 수집(Gmail)하고, 채점 결과를 구글 시트(Google Sheets)에 연동하여 관리하는 Python 백엔드 자동화 프로젝트입니다.
+학생들의 과제 이메일을 수집(Gmail)하고, 채점 결과를 구글 시트(Google Sheets)에 연동하여 관리하는 Python 자동화 저장소입니다.
+
+> **강의안·교재 개발**은 형제 저장소 `../stu2603`에서 수행합니다.
+> 과목별 교재·과제 자료는 `../py2608-stu`(파이썬), `../web2608-stu`(웹)에 있습니다.
 
 ---
 
 ## 🎯 주요 기능
 
-- **이메일 자동 수집 및 채점**: 수신된 이메일의 제목 키워드(`과제`, `assignment`)를 파싱하여 학번을 식별하고, 제출 시간에 따라 자동으로 채점(CSV 추출)
-- **구글 시트 연동**: 채점된 대상 데이터(예: `score1.csv`)를 학생별/과목별 구글 스프레드시트에 자동으로 Append(추가) 기록
-- **안전한 인증 관리**: `secret.json` 등 인증 파일을 활용한 백그라운드 봇 환경 구축
+- **이메일 자동 수집 및 채점**: 수신된 이메일의 제목 키워드(`과제`, `assignment`)를 파싱하여 학번을 식별하고, 채점 규칙에 따라 자동 채점
+- **구글 시트 연동**: 채점 결과를 학생별/과목별 구글 스프레드시트에 멱등(Upsert) 기록
+- **채점 규칙 SSOT**: 감점 기준·시트 포맷·언어 정책 등 채점 규칙을 문서화
+- **안전한 인증 관리**: 서비스 계정(`service-account.json`)을 활용한 Google API 인증
 
 ---
 
@@ -44,7 +48,7 @@
 
 ## 📊 성적 및 학생 관리 (Grade Management)
 
-- **전체 학생**: [전체 학생(Google Sheets)](https://docs.google.com/spreadsheets/d/1lUdHWhyNDTZl9n7s48jn3FCrH6gcbQvGt1nkLBbIM9o/edit?gid=1889091726#gid=1889091726)
+- **전체 학생 (비공유, 교수 전용)**: [전체 학생(Google Sheets)](https://docs.google.com/spreadsheets/d/1lUdHWhyNDTZl9n7s48jn3FCrH6gcbQvGt1nkLBbIM9o/edit?gid=1889091726#gid=1889091726) *(서비스 계정 미공유)*
 - **파이썬 4반 성적부**: [파이썬 4반 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit?gid=1514293361#gid=1514293361)
 - **웹프로그래밍 (1반 / 2반) 과제 및 성적부**: [web-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=1892167835#gid=1892167835) *(⚠️ 대원칙: 항상 100% 영어 기록)*
 - **수강생 명단 SSOT**: `5input/students/` 디렉터리 (`py-students.md`, `wb-students.md`, `students_summary.md`)
