@@ -18,13 +18,18 @@ def load_course_config(base_dir, course="py"):
 
 
 def get_sheet_service(base_dir):
-    secret_path = os.path.join(base_dir, "secret.json")
+    # 크레덴셜 후보 경로 순서대로 탐색
+    candidates = [
+        os.path.join(base_dir, "secret.json"),
+        os.path.expanduser("~/nvme_data/prj/exchange/service-account.json"),
+    ]
+    secret_path = next((p for p in candidates if os.path.exists(p)), None)
 
-    if os.path.exists(secret_path):
+    if secret_path:
         creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)
     else:
         print(
-            "ℹ️ secret.json이 없으므로 WIF(Application Default Credentials)를 시도합니다."
+            "ℹ️ 서비스 계정 키 파일이 없으므로 Application Default Credentials를 시도합니다."
         )
         creds, _ = google.auth.default(scopes=SCOPES)
 

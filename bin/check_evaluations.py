@@ -44,7 +44,12 @@ def main():
     args = parser.parse_args()
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    secret_path = os.path.join(base_dir, "secret.json")
+    # 크레덴셜 후보 경로 순서대로 탐색
+    candidates = [
+        os.path.join(base_dir, "secret.json"),
+        os.path.expanduser("~/nvme_data/prj/exchange/service-account.json"),
+    ]
+    secret_path = next((p for p in candidates if os.path.exists(p)), None)
 
     settings = load_settings()
     sheet_id = settings.get(

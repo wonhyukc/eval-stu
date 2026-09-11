@@ -1,10 +1,18 @@
 import os
 import csv
+
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-SERVICE_ACCOUNT_FILE = "secret.json"
+
+_SA_CANDIDATES = [
+    "secret.json",
+    os.path.expanduser("~/nvme_data/prj/exchange/service-account.json"),
+]
+SERVICE_ACCOUNT_FILE = next(
+    (p for p in _SA_CANDIDATES if os.path.exists(p)), "secret.json"
+)
 USER_EMAIL = "wonhyukc@stu.ac.kr"
 
 

@@ -16,7 +16,12 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 
 def get_sheet_service(base_dir):
-    secret_path = os.path.join(base_dir, "secret.json")
+    # 크레덴셜 후보 경로 순서대로 탐색
+    candidates = [
+        os.path.join(base_dir, "secret.json"),
+        os.path.expanduser("~/nvme_data/prj/exchange/service-account.json"),
+    ]
+    secret_path = next((p for p in candidates if os.path.exists(p)), None)
     if os.path.exists(secret_path):
         creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)
     else:
