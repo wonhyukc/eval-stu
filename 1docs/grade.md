@@ -93,22 +93,22 @@ flowchart TD
 - **Row 2**: 14개 표준 컬럼 헤더
 - **Row 3 ~ N**: 학생별 원점수 집계 및 비례 환산 행
 
-| 컬럼 | 필드명 | 유형 | 계산 수식 (Row $r$, 학생 ID 기준) |
-|:---:|:---|:---:|:---|
-| A | `Track` | 정수 | 분반 번호 (`1`, `2`, `4`) |
-| B | `StudentID` | 텍스트 | 학번 (`740`, `857` 등) |
-| C | `Name` | 텍스트 | 학생 영문 성명 |
-| D | `Raw HW` | 원점수 | `=SUMIFS(score!$D:$D, score!$B:$B, "<ID>", score!$E:$E, "0.*")` |
-| E | `Raw Part` | 원점수 | `=SUMIFS(score!$D:$D, score!$B:$B, "<ID>", score!$E:$E, "class") + SUMIFS(score!$D:$D, score!$B:$B, "<ID>", score!$E:$E, "peer*") + SUMIFS(score!$D:$D, score!$B:$B, "<ID>", score!$E:$E, "ping")` |
-| F | `Raw Pres` | 원점수 | `=SUMIFS(score!$D:$D, score!$B:$B, "<ID>", score!$E:$E, "*demo*")` |
-| G | `Raw Final` | 원점수 | `=SUMIFS(score!$D:$D, score!$B:$B, "<ID>", score!$E:$E, "*report*")` |
-| H | `Raw Att` | 원점수 | 기본 출석 점수 (`10`) |
-| I | `HW (10%)` | 환산점수 | `=LET(mx, MAXIFS(D$3:D$N, $A$3:$A$N, $Ar), IF(mx>0, ROUND((Dr/mx)*10, 2), 0))` |
-| J | `Part (30%)` | 환산점수 | `=LET(mx, MAXIFS(E$3:E$N, $A$3:$A$N, $Ar), IF(mx>0, ROUND((Er/mx)*30, 2), 0))` |
-| K | `Pres (20%)` | 환산점수 | `=LET(mx, MAXIFS(F$3:F$N, $A$3:$A$N, $Ar), IF(mx>0, ROUND((Fr/mx)*20, 2), 0))` |
-| L | `Final (30%)` | 환산점수 | `=LET(mx, MAXIFS(G$3:G$N, $A$3:$A$N, $Ar), IF(mx>0, ROUND((Gr/mx)*30, 2), 0))` |
-| M | `Att (10%)` | 환산점수 | `=LET(mx, MAXIFS(H$3:H$N, $A$3:$A$N, $Ar), IF(mx>0, ROUND((Hr/mx)*10, 2), 0))` |
-| N | `Total (100)` | 총점 | `=ROUND(SUM(Ir:Mr), 2)` |
+| 컬럼 | 필드명 (웹 1/2반) | 필드명 (파이썬 4반) | 유형 | 계산 수식 (Row $r$, 학생 ID 기준) |
+|:---:|:---|:---|:---:|:---|
+| A | `Track` | `트랙` | 정수 | 분반 번호 (`1`, `2`, `4`) |
+| B | `StudentID` | `학번` | 텍스트 | 학번 (`740`, `857` 등) |
+| C | `Name` | `이름` | 텍스트 | 학생 영문 성명 |
+| D | `Raw HW` | `과제 원점수` | 원점수 | `=SUMIFS(score!$D:$D, score!$B:$B, "<ID>", score!$E:$E, "0.*")` |
+| E | `Raw Part` | `참여도 원점수` | 원점수 | `=SUMIFS(score!$D:$D, score!$B:$B, "<ID>", score!$E:$E, "class") + SUMIFS(score!$D:$D, score!$B:$B, "<ID>", score!$E:$E, "peer*") + SUMIFS(score!$D:$D, score!$B:$B, "<ID>", score!$E:$E, "ping")` |
+| F | `Raw Pres` | `수업시연 원점수` | 원점수 | `=SUMIFS(score!$D:$D, score!$B:$B, "<ID>", score!$E:$E, "*demo*")` |
+| G | `Raw Final` | `기말보고서 원점수` | 원점수 | `=SUMIFS(score!$D:$D, score!$B:$B, "<ID>", score!$E:$E, "*report*")` |
+| H | `Raw Att` | `출석 원점수` | 원점수 | 기본 출석 점수 (`10`) |
+| I | `HW (10%)` | `과제 (10%)` | 환산점수 | `=LET(mx, MAXIFS(D$3:D$N, $A$3:$A$N, $Ar), IF(mx>0, ROUND((Dr/mx)*10, 2), 0))` |
+| J | `Part (30%)` | `참여도 (30%)` | 환산점수 | `=LET(mx, MAXIFS(E$3:E$N, $A$3:$A$N, $Ar), IF(mx>0, ROUND((Er/mx)*30, 2), 0))` |
+| K | `Pres (20%)` | `수업시연 (20%)` | 환산점수 | `=LET(mx, MAXIFS(F$3:F$N, $A$3:$A$N, $Ar), IF(mx>0, ROUND((Fr/mx)*20, 2), 0))` |
+| L | `Final (30%)` | `기말보고서 (30%)` | 환산점수 | `=LET(mx, MAXIFS(G$3:G$N, $A$3:$A$N, $Ar), IF(mx>0, ROUND((Gr/mx)*30, 2), 0))` |
+| M | `Att (10%)` | `출석 (10%)` | 환산점수 | `=LET(mx, MAXIFS(H$3:H$N, $A$3:$A$N, $Ar), IF(mx>0, ROUND((Hr/mx)*10, 2), 0))` |
+| N | `Total (100)` | `총점 (100)` | 총점 | `=ROUND(SUM(Ir:Mr), 2)` |
 
 ### 5.2. 서식 및 디자인 표준
 - **틀 고정 (Freeze)**: Row 2 (헤더), Col 3 (Track, StudentID, Name 고정)
