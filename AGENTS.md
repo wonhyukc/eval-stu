@@ -3,9 +3,11 @@
 이 문서는 `eval-stu` 저장소의 **유일한 규칙 원천(SSOT)**입니다. **학생 평가(과제 수집·채점·성적 관리)** 자동화 저장소 운영 지침을 담습니다.
 
 > **⚠️ SSOT 경고**: `.agents/rules/language.md`와 `.agents/rules/rules-project.md`는 **생성 금지**입니다. 모든 규칙은 이 문서(AGENTS.md)에만 정의됩니다. pre-commit 훅이 재생성을 차단합니다.
+>
+> **`.claude/` 디렉터리 생성 금지**: 이 프로젝트는 `.agents/`만 사용합니다. `.claude/`, `.claude/settings.json`, `.claude/commands/` 등 Claude Code 전용 구성 파일·디렉터리를 생성하지 않습니다.
 
-- 스킬: `.agents/skills/<name>/SKILL.md` (Claude Code에는 `.claude/skills` 심볼릭 링크로 연동)
-- 워크플로우: `.agents/workflows/*.md` (Claude Code에는 `.claude/commands` 심볼릭 링크로 연동)
+- 스킬: `.agents/skills/<name>/SKILL.md`
+- 워크플로우: `.agents/workflows/*.md`
 - 프로젝트 개요 및 디렉터리 구조는 `README.md` 참고.
 
 ---
