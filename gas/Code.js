@@ -59,8 +59,9 @@ function checkNewQuestionsAndNotify() {
   }
 
   if (newQuestions.length > 0) {
+    const sheetUrl = `${ss.getUrl()}?gid=${sheet.getSheetId()}#gid=${sheet.getSheetId()}`;
     let message = `답변이 없는 새로운 질문이 ${newQuestions.length}건 있습니다.\n\n`;
-    message += `시트 링크:\n${ss.getUrl()}\n\n`;
+    message += `시트 링크:\n${sheetUrl}\n\n`;
     message += "--- 새 질문 내용 ---\n";
 
     for (const q of newQuestions) {
