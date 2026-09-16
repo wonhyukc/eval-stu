@@ -53,7 +53,7 @@
 - **전체 학생 (비공유, 교수 전용)**: [전체 학생(Google Sheets)](https://docs.google.com/spreadsheets/d/1lUdHWhyNDTZl9n7s48jn3FCrH6gcbQvGt1nkLBbIM9o/edit?gid=1889091726#gid=1889091726) *(서비스 계정 미공유, 교수 본인만 열람)*
 - **파이썬 4반 성적부**: [파이썬 4반 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit?gid=1514293361#gid=1514293361)
 - **웹프로그래밍 (1반 / 2반) 과제 및 성적부**: [web-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=1892167835#gid=1892167835) *(⚠️ 대원칙: 이 시트에 기록할 때는 헤더, 사유, 내용 일체가 항상 100% 영어여야 함)*
-- **학생 명단 SSOT**: `5input/students/` 디렉터리 내의 `py-students.md`, `wb-students.md`, `students_summary.md`
+- **학생 명단 SSOT**: 별도 저장소인 **`../stu2603/5input/students/`가 유일한 단일 규칙 원천(SSOT)**입니다. 이 저장소(`eval-stu`)의 `5input/students`는 상대 심볼릭 링크(`../../stu2603/5input/students`)로 연결되어 읽기 전용으로 참조합니다. **`eval-stu` 내부에서 학생 명단을 직접 생성하거나 수정하지 마십시오.** 학생 추가·수정·eCampus 명단 갱신은 항상 `stu2603`에서 수행합니다.
 - **과제 이메일(0.x) 채점 정책 SSOT**: **[`1docs/score-email.md`](file:///home/hyuk/prj/stu/eval-stu/1docs/score-email.md)**
   - 마이크로 과제의 모든 채점 원칙(배점 티어, 유예시간, 순수 본문 검증, 감점 기준, 다중 발송 멱등성, 시트 데이터 포맷팅 등)은 `1docs/score-email.md`가 **단일 규칙 원천(SSOT)**입니다.
   - **핵심 요약**:
@@ -73,7 +73,7 @@
 ### 강의안 저장소 (`../stu2603`)
 
 - 강의안·과제 SSOT는 별도 저장소 `../stu2603`입니다. 이 저장소에서는 **읽기만** 하고, 수정은 stu2603 쪽에서 합니다.
-- 교차 참조는 심볼릭 링크로 연결: `1docs/assignment-micro.md`, `1docs/scores.md`, `5input/py`, `5input/web`
+- 교차 참조는 심볼릭 링크로 연결: `1docs/assignment-micro.md`, `1docs/scores.md`, `5input/py`, `5input/web`, `5input/students`
 - 교차 링크는 **항상 상대경로**로 만듭니다(마운트 경로 변경에도 살아남도록). 깨진 링크는 pre-commit 훅이 차단합니다.
 
 ### 과목별 교재 폴더 (`../py2608-stu`, `../web2608-stu`)

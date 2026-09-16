@@ -57,11 +57,11 @@
 
 ## 📂 주요 디렉터리 및 데이터
 
-- `5input/students/`: 대상 과목 및 학생, 시간표 메타데이터 (총 76명)
-  - `py-students.md`: 파이썬 (04) 분반 목록 (13명)
+- `5input/students/`: 학생 명단 및 시간표 메타데이터 (강의안 저장소 `../stu2603/5input/students`를 가리키는 상대 심볼릭 링크, SSOT는 `stu2603`)
+  - `py-students.md`: 파이썬 (04) 분반 목록 (14명)
   - `wb-students.md`: 웹 프로그래밍 (01, 02) 2개 분반 목록 (63명)
   - `timetable.md`: 전체 시간표
-  - `students_summary.md`: 2026-2학기 전체 수강생 명단 현황
+  - `students_summary.md`: 2026-2학기 전체 수강생 명단 현황 (총 77명)
 - `5input/py`, `5input/web`: 강의안 저장소(`../stu2603`)의 주차별 산출물로 향하는 심볼릭 링크 (읽기 전용, 항상 상대경로 유지)
 - `1docs/`: 채점 정책·운영 매뉴얼 문서 (`assignment-micro.md`, `scores.md`는 `../stu2603`으로의 심볼릭 링크)
 - `modules/`: 기능별(구글 시트, 이메일 파싱 등) 독립 모듈 (라이브러리 성격)
