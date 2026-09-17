@@ -89,7 +89,7 @@
 - **자격증명 파일 접근 금지**: `secret.json`, `credentials.json`, `token.json`, `service-account.json`은 읽지도, 출력하지도, 커밋하지도 않습니다.
 - **학생 개인정보 보호**: 성적 CSV/TSV, 학생 사진, 이메일 본문은 git에 추가하지 않습니다 (`output/`, `9output/`, `*.csv`, `*.tsv`는 gitignore 유지).
 - **파이썬 코드 검증**: `.py` 수정 후에는 `./bin/harness-check.sh`(Black·Flake8·Mypy·Pytest)를 통과해야 하며, pre-commit 훅이 강제합니다.
-- **출력 폴더 분리**: 출력 폴더는 두 곳입니다: `output/`(채점·점수 CSV), `9output/`(상호평가 배정 md, 등급 산출물). 코드가 각각 참조하므로 임의로 합치지 않습니다.
+- **크롬 자동화 시 메인 브라우저 무간섭 및 전용 프로필(`~/.config/eval-stu-grader`) 운영 원칙**: 사용자의 일상 업무용 메인 크롬(`~/.config/google-chrome`)은 **절대 종료하지도, 복사하지도, 접근하지도 않습니다(Zero-Interference)**. 자동화는 오직 독립된 고정 전용 디렉터리(`~/.config/eval-stu-grader`)의 단일 `Default` 프로필만을 백그라운드로 띄워 실행하며, 채점 종료 시 해당 전용 프로세스만 종료합니다. 프로필 번호 증식 및 메인 크롬 세션 만료를 원천 차단합니다. (상세 설계: `1docs/email-grader-plan.md` 참고)
 
 ---
 
