@@ -28,10 +28,27 @@ def get_sheet_service(base_dir):
     if secret_path:
         creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)
     else:
-        print(
-            "ℹ️ 서비스 계정 키 파일이 없으므로 Application Default Credentials를 시도합니다."
-        )
-        creds, _ = google.auth.default(scopes=SCOPES)
+        try:
+            import subprocess
+
+            res = subprocess.run(
+                ["secret-tool", "lookup", "Title", "drive-api"],
+                capture_output=True,
+                text=True,
+            )
+            if res.stdout.strip():
+                data = json.loads(res.stdout.strip())
+                creds = Credentials.from_service_account_info(data, scopes=SCOPES)
+            else:
+                print(
+                    "ℹ️ 서비스 계정 키 파일이 없으므로 Application Default Credentials를 시도합니다."
+                )
+                creds, _ = google.auth.default(scopes=SCOPES)
+        except Exception:
+            print(
+                "ℹ️ 서비스 계정 키 파일이 없으므로 Application Default Credentials를 시도합니다."
+            )
+            creds, _ = google.auth.default(scopes=SCOPES)
 
     # cache_discovery=False 로 무한 지연 에러 원천 차단
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
