@@ -42,50 +42,91 @@ function onOpen() {
 
 /**
  * 2반(마스터) 시트의 'resource' 탭 내용을 1반 시트의 'resource' 탭으로 복사 및 동기화합니다.
- * 어느 시트에서 실행하더라도 항상 2반의 원본 내용이 1반으로 안전하게 배포됩니다.
+ * 파일 간 copyTo 제약 오류를 방지하기 위해 RichText 및 서식 단위로 안전하게 덮어씁니다.
  */
 function syncResourceTab() {
-  // 항상 2반(마스터) 시트에서 원본 가져오기
   const masterSS = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
   const sourceSheet = masterSS.getSheetByName("resource");
 
   if (!sourceSheet) {
     const msg = "2반(마스터) 시트에 'resource' 탭이 없습니다.";
     console.error(msg);
-    try {
-      SpreadsheetApp.getUi().alert(msg);
-    } catch (e) {}
+    try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
     return;
   }
 
+  // 1. 2반 마스터에서 데이터, 하이퍼링크, 서식, 열 너비 전부 추출
   const sourceRange = sourceSheet.getDataRange();
-  let syncCount = 0;
+  const numRows = sourceRange.getNumRows();
+  const numCols = sourceRange.getNumColumns();
 
+  const richTexts = sourceRange.getRichTextValues();
+  const backgrounds = sourceRange.getBackgrounds();
+  const fontWeights = sourceRange.getFontWeights();
+  const fontColors = sourceRange.getFontColors();
+  const horizontalAlignments = sourceRange.getHorizontalAlignments();
+  const verticalAlignments = sourceRange.getVerticalAlignments();
+
+  const colWidths = [];
+  for (let c = 1; c <= numCols; c++) {
+    colWidths.push(sourceSheet.getColumnWidth(c));
+  }
+
+  // 2. 대상 시트들(1반)에 안전하게 데이터 및 서식 주입
+  let syncCount = 0;
   TARGET_SPREADSHEET_IDS.forEach(id => {
     try {
       const targetSS = SpreadsheetApp.openById(id);
       let targetSheet = targetSS.getSheetByName("resource");
 
-      // 대상 시트에 resource 탭이 없으면 생성
       if (!targetSheet) {
         targetSheet = targetSS.insertSheet("resource", 1);
       }
 
-      // 기존 내용 및 서식 초기화 후 2반 마스터 내용 복제
+      // 기존 내용 클리어
       targetSheet.clear();
-      sourceRange.copyTo(targetSheet.getRange(1, 1));
+
+      // 행/열 부족 시 확장
+      const targetMaxRows = targetSheet.getMaxRows();
+      if (targetMaxRows < numRows) {
+        targetSheet.insertRowsAfter(targetMaxRows, numRows - targetMaxRows);
+      }
+      const targetMaxCols = targetSheet.getMaxColumns();
+      if (targetMaxCols < numCols) {
+        targetSheet.insertColumnsAfter(targetMaxCols, numCols - targetMaxCols);
+      }
+
+      const targetRange = targetSheet.getRange(1, 1, numRows, numCols);
+
+      // 서식 및 리치 텍스트(하이퍼링크 포함) 복사
+      targetRange.setBackgrounds(backgrounds);
+      targetRange.setFontWeights(fontWeights);
+      targetRange.setFontColors(fontColors);
+      targetRange.setHorizontalAlignments(horizontalAlignments);
+      targetRange.setVerticalAlignments(verticalAlignments);
+      targetRange.setRichTextValues(richTexts);
+
+      // 열 너비 복사
+      for (let c = 0; c < colWidths.length; c++) {
+        targetSheet.setColumnWidth(c + 1, colWidths[c]);
+      }
+
+      // 혹시 임시 생성되었던 사본 시트가 있으면 삭제
+      const copySheet = targetSS.getSheetByName("resource의 사본") || targetSS.getSheetByName("Copy of resource");
+      if (copySheet) {
+        try { targetSS.deleteSheet(copySheet); } catch (e) {}
+      }
+
       syncCount++;
-      console.log(`[리소스 동기화 완료] 2반(마스터) -> 대상(${id})`);
+      console.log(`[리소스 동기화 성공] 2반(마스터) -> 대상(${id})`);
     } catch (err) {
       console.error(`[리소스 동기화 실패] 대상 ID: ${id}, 에러: ${err.message}`);
     }
   });
 
-  const alertMsg = `✅ 2반(마스터)의 resource 탭이 1반 시트로 동기화되었습니다. (${syncCount}개 반영)`;
+  const alertMsg = `✅ 2반(마스터)의 resource 탭이 1반 시트로 완벽히 동기화되었습니다. (${syncCount}개 반영)`;
   console.log(alertMsg);
-  try {
-    SpreadsheetApp.getUi().alert(alertMsg);
-  } catch (e) {}
+  try { SpreadsheetApp.getUi().alert(alertMsg); } catch (e) {}
 }
 
 /**
