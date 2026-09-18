@@ -48,10 +48,11 @@
 
 ## 📊 성적 및 학생 관리 (Grade Management)
 
-- **전체 학생 (비공유, 교수 전용)**: [전체 학생(Google Sheets)](https://docs.google.com/spreadsheets/d/1lUdHWhyNDTZl9n7s48jn3FCrH6gcbQvGt1nkLBbIM9o/edit?gid=1889091726#gid=1889091726) *(서비스 계정 미공유)*
-- **파이썬 4반 성적부**: [파이썬 4반 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit?gid=1514293361#gid=1514293361)
-- **웹프로그래밍 1반 (web1) 성적부**: [web1-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk/edit?gid=1889091726#gid=1889091726) *(⚠️ 대원칙: 항상 100% 영어 기록)*
-- **웹프로그래밍 2반 (web2) 성적부**: [web2-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=1892167835#gid=1892167835) *(⚠️ 대원칙: 항상 100% 영어 기록)*
+- **구글 스프레드시트 SSOT**: [`1docs/sheets.md`](file:///home/hyuk/prj/stu/eval-stu/1docs/sheets.md) *(4개 시트 ID, URL, 탭 구조, 시트 언어 정책의 유일한 원천)*
+  - 전체 학생 명부 (비공개, 교수 전용)
+  - 파이썬 4반 성적부 (`score`, `grade`)
+  - 웹프로그래밍 1반 (web1) 성적부 (100% 영어 기록)
+  - 웹프로그래밍 2반 (web2) 성적부 (100% 영어 기록)
 - **수강생 명단 SSOT**: `5input/students/` 디렉터리 (`py-students.md`, `wb-students.md`, `students_summary.md`)
 
 ---
@@ -64,7 +65,7 @@
   - `timetable.md`: 전체 시간표
   - `students_summary.md`: 2026-2학기 전체 수강생 명단 현황
 - `5input/py`, `5input/web`: 강의안 저장소(`../stu2603`)의 주차별 산출물로 향하는 심볼릭 링크 (읽기 전용, 항상 상대경로 유지)
-- `1docs/`: 채점 정책·운영 매뉴얼 문서 (`assignment-micro.md`, `scores.md`는 `../stu2603`으로의 심볼릭 링크)
+- `1docs/`: 채점 정책·운영 매뉴얼 문서 (`sheets.md`, `assignment-micro.md`, `scores.md`는 `../stu2603`으로의 심볼릭 링크)
 - `modules/`: 기능별(구글 시트, 이메일 파싱 등) 독립 모듈 (라이브러리 성격)
 - `bin/`: 하네스 검증 스크립트(`harness-check.sh`)와 채점·성적 처리 실행 스크립트(`fetch_gmail.py`, `calculate_final_grades.py` 등)
 - `scripts/`: 일회성 변환·실험 스크립트
