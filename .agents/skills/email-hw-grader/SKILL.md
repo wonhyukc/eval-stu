@@ -11,11 +11,13 @@ Gmail 수신함에서 학생들의 과제 제출 이메일을 크롤링·파싱�
 
 ## 🎯 대상 과목 및 구글 스프레드시트 매핑
 
-| 대표 명칭 | 강좌번호 (트랙) | 강의 언어 | 대상 스프레드시트 (score 탭) | 시트 기록 언어 |
-|:---:|:---:|:---:|---|:---:|
-| **1반** | `15143` (E트랙 01분반) | 영어 | [web1-stu0926 (score 탭)](https://docs.google.com/spreadsheets/d/1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk/edit#gid=1889091726) | **100% 영문** |
-| **2반** | `15144` (E트랙 02분반) | 영어 | [web2-stu0926 (score 탭)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit#gid=1892167835) | **100% 영문** |
-| **4반** | `14712` (K트랙 04분반) | 한국어 | [04반 성적부 (score 탭)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit#gid=1514293361) | **100% 한글** |
+| 대표 명칭 | 강좌번호 (트랙) | 강의 언어 | 대상 스프레드시트 (score 탭) | 시트 ID | 시트 기록 언어 |
+|:---:|:---:|:---:|---|---|:---:|
+| **1반** | `15143` (E트랙 01분반) | 영어 | [web1-stu0926 (score 탭)](https://docs.google.com/spreadsheets/d/1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk/edit#gid=1892167835) | `1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk` | **100% 영문** |
+| **2반** | `15144` (E트랙 02분반) | 영어 | [web2-stu0926 (score 탭)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit#gid=1892167835) | `1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo` | **100% 영문** |
+| **4반** | `14712` (K트랙 04분반) | 한국어 | [04반 성적부 (score 탭)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit#gid=1514293361) | `1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ` | **100% 한글** |
+
+> **분반별 자동 분기(Auto-Routing) 지원**: `course="web"`으로 일괄 채점 시, 학생의 트랙 번호(`15143` ➔ 1반, `15144` ➔ 2반)를 자동 판별하여 해당 분반 시트로 각각 멱등 분기 저장됩니다. 명시적으로 `course="web1"` 또는 `course="web2"`를 지정하여 특정 분반만 개별 채점하는 것도 가능합니다.
 
 ---
 

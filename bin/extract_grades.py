@@ -390,8 +390,8 @@ if __name__ == "__main__":
         dest="course",
         type=str,
         default="py",
-        choices=["py", "web"],
-        help="대상 과목 선택 (py 또는 web)",
+        choices=["py", "web", "web1", "web2"],
+        help="대상 과목 선택 (py, web, web1, 또는 web2)",
     )
     parser.add_argument(
         "-q",
