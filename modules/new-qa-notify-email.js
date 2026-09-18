@@ -34,7 +34,7 @@ function onOpen() {
   ui.createMenu('관리자 설정')
     .addItem('⚡ 새 질문 감지 & 시트 구조 방어(onChange) 트리거 켜기', 'createOnChangeTrigger')
     .addSeparator()
-    .addItem('📋 resource 탭 2반(마스터) 기준으로 동기화/배포', 'syncResourceTab')
+    .addItem('📋 resource 탭 동기화 (1행 보존, 2행부터 복사)', 'syncResourceTab')
     .addItem('🔄 시트 순서 지금 정렬 및 미허용 탭 삭제', 'manualEnforceStructure')
     .addItem('🔒 Q&A 1행 + D열 보호 설정 (학생 수정 차단)', 'protectHeaderAndColumnD')
     .addToUi();
@@ -42,7 +42,7 @@ function onOpen() {
 
 /**
  * 2반(마스터) 시트의 'resource' 탭 내용을 1반 시트의 'resource' 탭으로 복사 및 동기화합니다.
- * 파일 간 copyTo 제약 오류를 방지하기 위해 RichText 및 서식 단위로 안전하게 덮어씁니다.
+ * ⚠️ 1행(반별 고유 링크 및 개별 안내)은 건드리지 않고 100% 보존하며, 2행부터의 공통 리소스만 안전하게 동기화합니다.
  */
 function syncResourceTab() {
   const masterSS = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
@@ -55,11 +55,21 @@ function syncResourceTab() {
     return;
   }
 
-  // 1. 2반 마스터에서 데이터, 하이퍼링크, 서식, 열 너비 전부 추출
-  const sourceRange = sourceSheet.getDataRange();
-  const numRows = sourceRange.getNumRows();
-  const numCols = sourceRange.getNumColumns();
+  const startRow = 2; // 1행 보존을 위해 2행부터 시작
+  const lastRow = sourceSheet.getLastRow();
 
+  if (lastRow < startRow) {
+    const msg = "2반 마스터 시트에 복사할 2행 이하 데이터가 없습니다.";
+    console.log(msg);
+    try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+    return;
+  }
+
+  const numRows = lastRow - startRow + 1;
+  const numCols = sourceSheet.getLastColumn() || 1;
+
+  // 1. 2반 마스터에서 2행부터 데이터, 하이퍼링크, 서식 추출
+  const sourceRange = sourceSheet.getRange(startRow, 1, numRows, numCols);
   const richTexts = sourceRange.getRichTextValues();
   const backgrounds = sourceRange.getBackgrounds();
   const fontWeights = sourceRange.getFontWeights();
@@ -67,12 +77,13 @@ function syncResourceTab() {
   const horizontalAlignments = sourceRange.getHorizontalAlignments();
   const verticalAlignments = sourceRange.getVerticalAlignments();
 
+  // 열 너비 추출
   const colWidths = [];
   for (let c = 1; c <= numCols; c++) {
     colWidths.push(sourceSheet.getColumnWidth(c));
   }
 
-  // 2. 대상 시트들(1반)에 안전하게 데이터 및 서식 주입
+  // 2. 대상 시트들(1반)의 2행부터 데이터 주입 (1행은 보존)
   let syncCount = 0;
   TARGET_SPREADSHEET_IDS.forEach(id => {
     try {
@@ -83,22 +94,23 @@ function syncResourceTab() {
         targetSheet = targetSS.insertSheet("resource", 1);
       }
 
-      // 기존 내용 클리어
-      targetSheet.clear();
+      // 1행은 건드리지 않고 2행부터의 기존 데이터만 클리어
+      const targetLastRow = targetSheet.getLastRow();
+      if (targetLastRow >= startRow) {
+        targetSheet.getRange(startRow, 1, targetLastRow - startRow + 1, targetSheet.getMaxColumns()).clear();
+      }
 
       // 행/열 부족 시 확장
-      const targetMaxRows = targetSheet.getMaxRows();
-      if (targetMaxRows < numRows) {
-        targetSheet.insertRowsAfter(targetMaxRows, numRows - targetMaxRows);
+      const requiredRows = startRow + numRows - 1;
+      if (targetSheet.getMaxRows() < requiredRows) {
+        targetSheet.insertRowsAfter(targetSheet.getMaxRows(), requiredRows - targetSheet.getMaxRows());
       }
-      const targetMaxCols = targetSheet.getMaxColumns();
-      if (targetMaxCols < numCols) {
-        targetSheet.insertColumnsAfter(targetMaxCols, numCols - targetMaxCols);
+      if (targetSheet.getMaxColumns() < numCols) {
+        targetSheet.insertColumnsAfter(targetSheet.getMaxColumns(), numCols - targetSheet.getMaxColumns());
       }
 
-      const targetRange = targetSheet.getRange(1, 1, numRows, numCols);
-
-      // 서식 및 리치 텍스트(하이퍼링크 포함) 복사
+      // 2행부터 데이터 및 서식 주입
+      const targetRange = targetSheet.getRange(startRow, 1, numRows, numCols);
       targetRange.setBackgrounds(backgrounds);
       targetRange.setFontWeights(fontWeights);
       targetRange.setFontColors(fontColors);
@@ -106,25 +118,25 @@ function syncResourceTab() {
       targetRange.setVerticalAlignments(verticalAlignments);
       targetRange.setRichTextValues(richTexts);
 
-      // 열 너비 복사
+      // 열 너비 반영
       for (let c = 0; c < colWidths.length; c++) {
         targetSheet.setColumnWidth(c + 1, colWidths[c]);
       }
 
-      // 혹시 임시 생성되었던 사본 시트가 있으면 삭제
+      // 혹시 이전에 생겼던 임시 사본 시트가 있다면 정리
       const copySheet = targetSS.getSheetByName("resource의 사본") || targetSS.getSheetByName("Copy of resource");
       if (copySheet) {
         try { targetSS.deleteSheet(copySheet); } catch (e) {}
       }
 
       syncCount++;
-      console.log(`[리소스 동기화 성공] 2반(마스터) -> 대상(${id})`);
+      console.log(`[리소스 동기화 성공] 2반(마스터) -> 대상(${id}) (2행~${requiredRows}행)`);
     } catch (err) {
       console.error(`[리소스 동기화 실패] 대상 ID: ${id}, 에러: ${err.message}`);
     }
   });
 
-  const alertMsg = `✅ 2반(마스터)의 resource 탭이 1반 시트로 완벽히 동기화되었습니다. (${syncCount}개 반영)`;
+  const alertMsg = `✅ 2반(마스터)의 resource 2행 이하 내용이 1반으로 안전하게 동기화되었습니다. (1행 고유정보 보존됨)`;
   console.log(alertMsg);
   try { SpreadsheetApp.getUi().alert(alertMsg); } catch (e) {}
 }
