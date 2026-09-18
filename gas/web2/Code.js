@@ -1,4 +1,16 @@
 /**
+ * 스프레드시트 ID 정의 (코드 최상단 전역 변수)
+ */
+const SPREADSHEET_ID_WEB1 = "1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk"; // 1반 (web1)
+const SPREADSHEET_ID_WEB2 = "1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo"; // 2반 (web2)
+
+// 공통 웹프로그래밍 스프레드시트 ID 목록
+const ALL_WEB_SPREADSHEET_IDS = [
+  SPREADSHEET_ID_WEB1,
+  SPREADSHEET_ID_WEB2
+];
+
+/**
  * 2반 시트 기준 공식 탭 목록 및 고정 순서 (1반/2반 공통)
  */
 const ALLOWED_SHEET_ORDER = [
@@ -14,7 +26,7 @@ const ALLOWED_SHEET_ORDER = [
 ];
 
 /**
- * 시트를 열 때마다 구글 시트 상단에 'Q&A 알림 및 구조 관리' 메뉴를 추가합니다.
+ * 시트를 열 때마다 구글 시트 상단에 '관리자 설정' 메뉴를 추가합니다.
  * 이 메뉴를 통해 사용자가 직접 트리거를 켜거나 구조를 정렬할 수 있습니다.
  */
 function onOpen() {
@@ -22,9 +34,59 @@ function onOpen() {
   ui.createMenu('관리자 설정')
     .addItem('⚡ 새 질문 감지 & 시트 구조 방어(onChange) 트리거 켜기', 'createOnChangeTrigger')
     .addSeparator()
+    .addItem('📋 resource 탭 다른 반 시트로 즉시 복사/동기화', 'syncResourceTab')
     .addItem('🔄 시트 순서 지금 정렬 및 미허용 탭 삭제', 'manualEnforceStructure')
     .addItem('🔒 Q&A 1행 + D열 보호 설정 (학생 수정 차단)', 'protectHeaderAndColumnD')
     .addToUi();
+}
+
+/**
+ * 현재 시트의 'resource' 탭 내용을 상대방 시트의 'resource' 탭으로 복사 및 동기화합니다.
+ */
+function syncResourceTab() {
+  const currentSS = SpreadsheetApp.getActiveSpreadsheet();
+  const currentId = currentSS.getId();
+  const sourceSheet = currentSS.getSheetByName("resource");
+
+  if (!sourceSheet) {
+    const msg = "현재 시트에 'resource' 탭이 없습니다.";
+    console.error(msg);
+    try {
+      SpreadsheetApp.getUi().alert(msg);
+    } catch (e) {}
+    return;
+  }
+
+  // 현재 시트를 제외한 대상 시트 목록
+  const targetIds = ALL_WEB_SPREADSHEET_IDS.filter(id => id !== currentId);
+  const sourceRange = sourceSheet.getDataRange();
+
+  let syncCount = 0;
+  targetIds.forEach(id => {
+    try {
+      const targetSS = SpreadsheetApp.openById(id);
+      let targetSheet = targetSS.getSheetByName("resource");
+
+      // 대상 시트에 resource 탭이 없으면 생성
+      if (!targetSheet) {
+        targetSheet = targetSS.insertSheet("resource", 1);
+      }
+
+      // 기존 내용 및 서식 초기화 후 원본 복제
+      targetSheet.clear();
+      sourceRange.copyTo(targetSheet.getRange(1, 1));
+      syncCount++;
+      console.log(`[리소스 동기화 완료] 대상 ID: ${id}`);
+    } catch (err) {
+      console.error(`[리소스 동기화 실패] 대상 ID: ${id}, 에러: ${err.message}`);
+    }
+  });
+
+  const alertMsg = `✅ resource 탭 동기화 완료 (${syncCount}개 시트에 반영)`;
+  console.log(alertMsg);
+  try {
+    SpreadsheetApp.getUi().alert(alertMsg);
+  } catch (e) {}
 }
 
 /**
