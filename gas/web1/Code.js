@@ -1,13 +1,14 @@
 /**
  * 스프레드시트 ID 정의 (코드 최상단 전역 변수)
+ * 2반(web2)이 마스터(SSOT) 원본 시트입니다.
  */
-const SPREADSHEET_ID_WEB1 = "1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk"; // 1반 (web1)
-const SPREADSHEET_ID_WEB2 = "1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo"; // 2반 (web2)
+const MASTER_SPREADSHEET_ID = "1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo"; // 2반 (web2) 마스터
+const SPREADSHEET_ID_WEB1 = "1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk";   // 1반 (web1)
+const SPREADSHEET_ID_WEB2 = MASTER_SPREADSHEET_ID;
 
-// 공통 웹프로그래밍 스프레드시트 ID 목록
-const ALL_WEB_SPREADSHEET_IDS = [
-  SPREADSHEET_ID_WEB1,
-  SPREADSHEET_ID_WEB2
+// 동기화 대상 스프레드시트 ID 목록 (2반 마스터 내용을 배포할 대상)
+const TARGET_SPREADSHEET_IDS = [
+  SPREADSHEET_ID_WEB1
 ];
 
 /**
@@ -27,29 +28,29 @@ const ALLOWED_SHEET_ORDER = [
 
 /**
  * 시트를 열 때마다 구글 시트 상단에 '관리자 설정' 메뉴를 추가합니다.
- * 이 메뉴를 통해 사용자가 직접 트리거를 켜거나 구조를 정렬할 수 있습니다.
  */
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('관리자 설정')
     .addItem('⚡ 새 질문 감지 & 시트 구조 방어(onChange) 트리거 켜기', 'createOnChangeTrigger')
     .addSeparator()
-    .addItem('📋 resource 탭 다른 반 시트로 즉시 복사/동기화', 'syncResourceTab')
+    .addItem('📋 resource 탭 2반(마스터) 기준으로 동기화/배포', 'syncResourceTab')
     .addItem('🔄 시트 순서 지금 정렬 및 미허용 탭 삭제', 'manualEnforceStructure')
     .addItem('🔒 Q&A 1행 + D열 보호 설정 (학생 수정 차단)', 'protectHeaderAndColumnD')
     .addToUi();
 }
 
 /**
- * 현재 시트의 'resource' 탭 내용을 상대방 시트의 'resource' 탭으로 복사 및 동기화합니다.
+ * 2반(마스터) 시트의 'resource' 탭 내용을 1반 시트의 'resource' 탭으로 복사 및 동기화합니다.
+ * 어느 시트에서 실행하더라도 항상 2반의 원본 내용이 1반으로 안전하게 배포됩니다.
  */
 function syncResourceTab() {
-  const currentSS = SpreadsheetApp.getActiveSpreadsheet();
-  const currentId = currentSS.getId();
-  const sourceSheet = currentSS.getSheetByName("resource");
+  // 항상 2반(마스터) 시트에서 원본 가져오기
+  const masterSS = SpreadsheetApp.openById(MASTER_SPREADSHEET_ID);
+  const sourceSheet = masterSS.getSheetByName("resource");
 
   if (!sourceSheet) {
-    const msg = "현재 시트에 'resource' 탭이 없습니다.";
+    const msg = "2반(마스터) 시트에 'resource' 탭이 없습니다.";
     console.error(msg);
     try {
       SpreadsheetApp.getUi().alert(msg);
@@ -57,12 +58,10 @@ function syncResourceTab() {
     return;
   }
 
-  // 현재 시트를 제외한 대상 시트 목록
-  const targetIds = ALL_WEB_SPREADSHEET_IDS.filter(id => id !== currentId);
   const sourceRange = sourceSheet.getDataRange();
-
   let syncCount = 0;
-  targetIds.forEach(id => {
+
+  TARGET_SPREADSHEET_IDS.forEach(id => {
     try {
       const targetSS = SpreadsheetApp.openById(id);
       let targetSheet = targetSS.getSheetByName("resource");
@@ -72,17 +71,17 @@ function syncResourceTab() {
         targetSheet = targetSS.insertSheet("resource", 1);
       }
 
-      // 기존 내용 및 서식 초기화 후 원본 복제
+      // 기존 내용 및 서식 초기화 후 2반 마스터 내용 복제
       targetSheet.clear();
       sourceRange.copyTo(targetSheet.getRange(1, 1));
       syncCount++;
-      console.log(`[리소스 동기화 완료] 대상 ID: ${id}`);
+      console.log(`[리소스 동기화 완료] 2반(마스터) -> 대상(${id})`);
     } catch (err) {
       console.error(`[리소스 동기화 실패] 대상 ID: ${id}, 에러: ${err.message}`);
     }
   });
 
-  const alertMsg = `✅ resource 탭 동기화 완료 (${syncCount}개 시트에 반영)`;
+  const alertMsg = `✅ 2반(마스터)의 resource 탭이 1반 시트로 동기화되었습니다. (${syncCount}개 반영)`;
   console.log(alertMsg);
   try {
     SpreadsheetApp.getUi().alert(alertMsg);
