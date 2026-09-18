@@ -10,7 +10,8 @@
    - 학생 성적 및 과제 제출 현황 데이터를 읽고 쓰기 위한 메인 데이터베이스 역할.
    - 대상 시트 링크:
      - **파이썬 과정**: [파이썬 과제 시트](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit?gid=1514293361#gid=1514293361)
-     - **웹 과정**: [웹 과제 시트](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=1892167835#gid=1892167835)
+     - **웹 1반 과정**: [웹 1반 과제 시트](https://docs.google.com/spreadsheets/d/1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk/edit?gid=1889091726#gid=1889091726)
+     - **웹 2반 과정**: [웹 2반 과제 시트](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=1892167835#gid=1892167835)
      - **과제 제출 및 상호평가 통합 폼**: [통합 폼 시트](https://docs.google.com/spreadsheets/d/1_o-F6UaQ2WOe0nH2zuT_0xpwiOm1ebmWo2sEQzQptEk/edit?resourcekey=&gid=427896056#gid=427896056&fvid=8905371)
    - 인증 방식: 서비스 계정(Service Account, `secret.json`)을 활용.
 2. **이메일 수신 및 성적 처리 (과제 채점 자동화)**:

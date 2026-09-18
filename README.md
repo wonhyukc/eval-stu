@@ -50,7 +50,8 @@
 
 - **전체 학생 (비공유, 교수 전용)**: [전체 학생(Google Sheets)](https://docs.google.com/spreadsheets/d/1lUdHWhyNDTZl9n7s48jn3FCrH6gcbQvGt1nkLBbIM9o/edit?gid=1889091726#gid=1889091726) *(서비스 계정 미공유)*
 - **파이썬 4반 성적부**: [파이썬 4반 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit?gid=1514293361#gid=1514293361)
-- **웹프로그래밍 (1반 / 2반) 과제 및 성적부**: [web-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=1892167835#gid=1892167835) *(⚠️ 대원칙: 항상 100% 영어 기록)*
+- **웹프로그래밍 1반 (web1) 성적부**: [web1-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk/edit?gid=1889091726#gid=1889091726) *(⚠️ 대원칙: 항상 100% 영어 기록)*
+- **웹프로그래밍 2반 (web2) 성적부**: [web2-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=1892167835#gid=1892167835) *(⚠️ 대원칙: 항상 100% 영어 기록)*
 - **수강생 명단 SSOT**: `5input/students/` 디렉터리 (`py-students.md`, `wb-students.md`, `students_summary.md`)
 
 ---

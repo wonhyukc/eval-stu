@@ -13,8 +13,8 @@ Gmail 수신함에서 학생들의 과제 제출 이메일을 크롤링·파싱�
 
 | 대표 명칭 | 강좌번호 (트랙) | 강의 언어 | 대상 스프레드시트 (score 탭) | 시트 기록 언어 |
 |:---:|:---:|:---:|---|:---:|
-| **1반** | `15143` (E트랙 01분반) | 영어 | [web-stu0926 (score 탭)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit#gid=1892167835) | **100% 영문** |
-| **2반** | `15144` (E트랙 02분반) | 영어 | [web-stu0926 (score 탭)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit#gid=1892167835) | **100% 영문** |
+| **1반** | `15143` (E트랙 01분반) | 영어 | [web1-stu0926 (score 탭)](https://docs.google.com/spreadsheets/d/1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk/edit#gid=1889091726) | **100% 영문** |
+| **2반** | `15144` (E트랙 02분반) | 영어 | [web2-stu0926 (score 탭)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit#gid=1892167835) | **100% 영문** |
 | **4반** | `14712` (K트랙 04분반) | 한국어 | [04반 성적부 (score 탭)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit#gid=1514293361) | **100% 한글** |
 
 ---

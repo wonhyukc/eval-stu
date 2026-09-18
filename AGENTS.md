@@ -52,7 +52,8 @@
 
 - **전체 학생 (비공유, 교수 전용)**: [전체 학생(Google Sheets)](https://docs.google.com/spreadsheets/d/1lUdHWhyNDTZl9n7s48jn3FCrH6gcbQvGt1nkLBbIM9o/edit?gid=1889091726#gid=1889091726) *(서비스 계정 미공유, 교수 본인만 열람)*
 - **파이썬 4반 성적부**: [파이썬 4반 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit?gid=1514293361#gid=1514293361)
-- **웹프로그래밍 (1반 / 2반) 과제 및 성적부**: [web-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=1892167835#gid=1892167835) *(⚠️ 대원칙: 이 시트에 기록할 때는 헤더, 사유, 내용 일체가 항상 100% 영어여야 함)*
+- **웹프로그래밍 1반 (web1) 성적부**: [web1-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk/edit?gid=1889091726#gid=1889091726) *(⚠️ 대원칙: 항상 100% 영어 기록)*
+- **웹프로그래밍 2반 (web2) 성적부**: [web2-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=1892167835#gid=1892167835) *(⚠️ 대원칙: 항상 100% 영어 기록)*
 - **학생 명단 SSOT**: `5input/students/` 디렉터리 내의 `py-students.md`, `wb-students.md`, `students_summary.md`
 - **과제 이메일(0.x) 채점 정책 SSOT**: **[`1docs/score-email.md`](file:///home/hyuk/prj/stu/eval-stu/1docs/score-email.md)**
   - 마이크로 과제의 모든 채점 원칙(배점 티어, 유예시간, 순수 본문 검증, 감점 기준, 다중 발송 멱등성, 시트 데이터 포맷팅 등)은 `1docs/score-email.md`가 **단일 규칙 원천(SSOT)**입니다.

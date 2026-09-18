@@ -2,7 +2,8 @@
 
 > **문서 상태**: Approved & Deployed  
 > **대상 시트**:
-> - [웹프로그래밍(01, 02분반) 성적부 (Google Sheets)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=191465127#gid=191465127) (`grade` gid: `191465127`, `score` gid: `1892167835`)
+> - [웹프로그래밍 1반(01분반) 성적부 (Google Sheets)](https://docs.google.com/spreadsheets/d/1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk/edit?gid=1889091726#gid=1889091726)
+> - [웹프로그래밍 2반(02분반) 성적부 (Google Sheets)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=191465127#gid=191465127) (`grade` gid: `191465127`, `score` gid: `1892167835`)
 > - [파이썬(04분반) 성적부 (Google Sheets)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit?gid=20791464#gid=20791464) (`grade` gid: `20791464`, `score` gid: `1514293361`)  
 > **참조 SSOT**: [`1docs/scores.md`](file:///home/hyuk/prj/stu/eval-stu/1docs/scores.md), [`1docs/score-email.md`](file:///home/hyuk/prj/stu/eval-stu/1docs/score-email.md), [GitHub Issue #87](https://github.com/wonhyukc/eval-stu/issues/87)
 
