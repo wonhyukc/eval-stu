@@ -97,15 +97,22 @@ def normalize_row_to_11cols(row):
     구 9열 구조([No, StudentID, Track, Score, Type, Reason, Date, Name, Subject])가 들어오면
     11열 구조로 자동 확장 변환합니다.
     """
-    if len(row) == 9:
-        no, sid, track, score, ctype, reason, dt, name, subj = row
-        clean_t = str(ctype).replace("과제", "").replace("'", "").strip()
-        m = re.search(r"0\.(\d+)", clean_t)
-        wk = m.group(1) if m else ""
-        return [no, wk, sid, track, score, "hw", ctype, reason, dt, name, subj]
-    elif len(row) < 11:
-        extended = list(row) + [""] * (11 - len(row))
-        return extended
+    if len(row) < 11:
+        # 이미 11열 구조에서 끝 빈칸(Name, Subject 등)이 생략된 행인지 확인
+        if len(row) > 5 and str(row[5]).strip().lower() in [
+            "hw",
+            "class",
+            "mid",
+            "fin",
+        ]:
+            return list(row) + [""] * (11 - len(row))
+        if len(row) == 9 and not (str(row[1]).isdigit() and int(row[1]) < 16):
+            no, sid, track, score, ctype, reason, dt, name, subj = row
+            clean_t = str(ctype).replace("과제", "").replace("'", "").strip()
+            m = re.search(r"0\.(\d+)", clean_t)
+            wk = m.group(1) if m else ""
+            return [no, wk, sid, track, score, "hw", ctype, reason, dt, name, subj]
+        return list(row) + [""] * (11 - len(row))
     return list(row)
 
 
