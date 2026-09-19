@@ -11,11 +11,13 @@ Gmail 수신함에서 학생들의 과제 제출 이메일을 크롤링·파싱�
 
 ## 🎯 대상 과목 및 구글 스프레드시트 매핑
 
-| 대표 명칭 | 강좌번호 (트랙) | 강의 언어 | 대상 스프레드시트 (score 탭) | 시트 기록 언어 |
-|:---:|:---:|:---:|---|:---:|
-| **1반** | `15143` (E트랙 01분반) | 영어 | [web-stu0926 (score 탭)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit#gid=1892167835) | **100% 영문** |
-| **2반** | `15144` (E트랙 02분반) | 영어 | [web-stu0926 (score 탭)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit#gid=1892167835) | **100% 영문** |
-| **4반** | `14712` (K트랙 04분반) | 한국어 | [04반 성적부 (score 탭)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit#gid=1514293361) | **100% 한글** |
+| 대표 명칭 | 강좌번호 (트랙) | 강의 언어 | 대상 스프레드시트 (score 탭) | 시트 ID | 시트 기록 언어 |
+|:---:|:---:|:---:|---|---|:---:|
+| **1반** | `15143` (E트랙 01분반) | 영어 | [web1-stu0926 (score 탭)](https://docs.google.com/spreadsheets/d/1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk/edit#gid=1892167835) | `1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk` | **100% 영문** |
+| **2반** | `15144` (E트랙 02분반) | 영어 | [web2-stu0926 (score 탭)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit#gid=1892167835) | `1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo` | **100% 영문** |
+| **4반** | `14712` (K트랙 04분반) | 한국어 | [04반 성적부 (score 탭)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit#gid=1514293361) | `1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ` | **100% 한글** |
+
+> **분반별 자동 분기(Auto-Routing) 지원**: `course="web"`으로 일괄 채점 시, 학생의 트랙 번호(`15143` ➔ 1반, `15144` ➔ 2반)를 자동 판별하여 해당 분반 시트로 각각 멱등 분기 저장됩니다. 명시적으로 `course="web1"` 또는 `course="web2"`를 지정하여 특정 분반만 개별 채점하는 것도 가능합니다.
 
 ---
 
@@ -147,20 +149,36 @@ Gmail 수신함에서 학생들의 과제 제출 이메일을 크롤링·파싱�
 
        규정에 맞춰 다음 과제 제출 시 유의해 주시기 바랍니다.
        ```
-3. **발송 메커니즘 (Playwright 브라우저 세션 내 직접 답장)**:
-   - **기존 로그인 프로필 재사용**: `tmp/playwright_chrome_data`에 저장된 브라우저 세션을 활용하므로 별도의 SMTP 또는 Gmail API 권한 부여 없이 이미 로그인된 상태로 즉시 동작합니다.
+### 3. 브라우저 세션 아키텍처: 완전 격리 단일 전용 프로필 (`~/.config/eval-stu-grader`)
+
+> **⚠️ 아키텍처 SSOT**: 상세 아키텍처 및 무간섭 설계 배경은 **[`1docs/email-grader-plan.md`](file:///home/hyuk/prj/stu/eval-stu/1docs/email-grader-plan.md)**를 참고하십시오.
+
+사용자의 일상 업무용 메인 크롬(`~/.config/google-chrome`)과 충돌하거나 세션이 만료되는 사고를 원천 차단하기 위해, **단 하나의 고정 독립 전용 디렉터리(`~/.config/eval-stu-grader`)**를 영구적으로 사용합니다.
+
+| 비교 항목 | 기존 위험 방식 (메인 크롬 복제/종료) | 확정 표준 방식 (단일 고정 전용 프로필) |
+|:---:|---|---|
+| **저장 경로** | `~/.config/google-chrome` (Profile 4 임시 복제) | **`~/.config/eval-stu-grader` (Default 단일 고정)** |
+| **메인 크롬 영향** | 전체 크롬 강제 종료 필수(`pkill chrome`), 계정 세션 만료 위험 ❌ | **메인 크롬 100% 무간섭 (종료 불필요, 세션 완벽 보존) ✅** |
+| **프로필 관리** | 세션 복사로 프로필 꼬임 및 증식 위험 ❌ | **단 1개의 고정 디렉터리(`Default`)만 영구 재사용 ✅** |
+| **로그인 절차** | 세션 만료 시 모든 서비스 재로그인 필요 ❌ | **초기 1회 수동 로그인 후 영구 보존 ✅** |
+| **작업 편의성** | 매주 임시 파이썬 코드 작성 및 디버깅 ❌ | **`./bin/grade-email.py --task 0.x` 단 한 줄 실행 ✅** |
+
+---
+
+### 4. 발송 메커니즘 및 브라우저 세션 제어 원칙:
+   - **메인 크롬 절대 무간섭 (Zero-Interference)**:
+     - 사용자가 평소 작업 중인 메인 크롬 창은 절대 닫지 않으며, `pkill chrome` 등의 전체 강제 종료 명령을 사용하지 않습니다.
+   - **단일 전용 프로필 백그라운드 구동**:
+     - `google-chrome --user-data-dir=$HOME/.config/eval-stu-grader --remote-debugging-port=9222` 형태로 백그라운드 구동하여 CDP(9222)로 연결합니다.
+     - 작업 완료 시 오직 해당 전용 프로세스만 안전하게 종료합니다.
    - **스레드 직접 답장(Thread Reply)**:
-     1. 검색 결과 테이블 선택 시 **반드시 활성화된 가시적 컨테이너(`table.F.cf.zt:visible tr.zA:visible`)의 행만 타겟팅**하여 숨김 행 클릭으로 인한 타임아웃 오류를 원천 차단합니다.
-     2. 검색 결과 또는 스레드 진입 후 단축키 `r`(Reply) 입력 또는 '답장' 버튼 클릭
-     3. 메시지 본문 에디터(`div[role="textbox"]`)에 트랙 언어별 템플릿 입력
-     4. 단축키 `Control+Enter`로 발송 완료 대기
+     1. 검색 결과 테이블 선택 시 활성화된 가시적 컨테이너(`table.F.cf.zt:visible tr.zA:visible`)의 행만 타겟팅합니다.
+     2. 스레드 진입 후 '답장' 버튼 클릭 또는 단축키 `r`
+     3. 메시지 본문 에디터(`div[role="textbox"]`)에 트랙 언어별 템플릿 입력 후 발송
    - **미답장 판별 로직**:
-     - 검색 단계에서 `-from:wonhyukc@stu.ac.kr` 필터를 적용하고, 스레드 내부 진입 시 마지막 메시지가 교강사(`wonhyukc@stu.ac.kr` 또는 "나")가 아닌 경우(학생의 마지막 발송분)에만 답장 수행
-     - 이미 답장 완료된 스레드는 발송을 건너뜁니다.
+     - 스레드 내부 진입 시 교강사(`wonhyukc@stu.ac.kr`)의 답장 이력이 있는 스레드는 절대 중복 답장하지 않고 건너뜁니다.
    - **빈 회신 메일 차단 (Empty Quoted-Reply Guard)**:
-     - 학생이 기존 오류 안내에 제목만 고쳐 보낸 **내용 없는 빈 회신(인용문만 있는 메일)은 '과제 잘 받았습니다' 칭찬 답장을 발송하지 않고, '내용 누락' 재제출 안내를 보내거나 검토 플래그로 분류**합니다.
-   - **발송 안전장치**:
-     - 발송 전 대상 목록(학번, 이름, 트랙, 점수, 본문 유효성 검증 결과, 답장 내용 요약)을 콘솔에 출력하고 기록합니다.
+     - 본문 미작성/단순 인용 회신(0.0점)은 정상 접수 답장을 발송하지 않고 재제출 안내를 발송하거나 시트에서 제외합니다.
 
 ---
 
@@ -169,18 +187,18 @@ Gmail 수신함에서 학생들의 과제 제출 이메일을 크롤링·파싱�
 1. **학생 명단 로드 (SSOT)**:
    - `5input/students/py-students.md` (4반 `14712`)
    - `5input/students/wb-students.md` (1반 `15143`, 2반 `15144`)
-2. **독립 Playwright 프로필을 통한 Gmail 수집**:
-   - 경로: `tmp/playwright_chrome_data` (업무용 Chrome 프로세스와 충돌 차단)
-   - 최근 7일 메일 검색 및 파싱
-3. **채점 규칙 및 언어 변환 적용**:
-   - 마감 이전 최신 메일 채택
+2. **독립 전용 프로필을 통한 Gmail 수집**:
+   - 경로: `~/.config/eval-stu-grader` (메인 크롬과 100% 무간섭 격리)
+   - 전용 크롬 백그라운드 구동 후 CDP(9222) 연결하여 최근 과제 메일 검색 및 파싱
+3. **채점 규칙 및 언어 변환 적용 (SSOT: `1docs/score-email.md`)**:
+   - 5단계 배점 티어(1.0 / 0.9 / 0.7 / 0.5 / 0.2 / 0.0) 적용
    - 웹(1반/2반)은 100% 영문, 파이썬(4반)은 100% 한글 사유 적용
-   - 미제출자(0.3점)는 기록 제외
+   - 0.0점(미작성/불인정)은 시트 기록 제외
 4. **구글 시트 멱등 동기화**:
    - `secret-tool lookup Title 'drive-api'` 인증을 통해 Sheets API 호출
    - `(StudentID, Type)` 키 기준 Upsert 수행
-   - I열 및 B열에 `NumberFormat: TEXT` 및 `LEFT` 정렬 서식 적용
+   - Type 열 `'0.x` 문자열 포맷팅 및 I열/B열 텍스트 서식 강제
 5. **미답장 건 대상 자동 답장 발송**:
-   - 이미 답장 완료된 스레드 건너뛰기
    - 미답장 건에 한하여 해당 트랙 언어(E트랙: 영문, K트랙: 한글) 템플릿으로 스레드 답장 발송
-   - 발송 성공 여부 로깅 및 요약 보고
+   - 발송 완료 후 채점 전용 크롬 프로세스만 안전하게 종료
+

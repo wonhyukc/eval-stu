@@ -27,6 +27,28 @@
             ],
             "output_suffix": "web",
             "keyword": "assignment"
+        },
+        "web1": {
+            "sheet_id": "1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk",
+            "target_gid": 1892167835,
+            "tracks": [
+                "15143",
+                "01",
+                "761"
+            ],
+            "output_suffix": "web1",
+            "keyword": "assignment"
+        },
+        "web2": {
+            "sheet_id": "1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo",
+            "target_gid": 1892167835,
+            "tracks": [
+                "15144",
+                "02",
+                "762"
+            ],
+            "output_suffix": "web2",
+            "keyword": "assignment"
         }
     }
 }

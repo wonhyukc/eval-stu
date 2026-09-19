@@ -28,10 +28,27 @@ def get_sheet_service(base_dir):
     if secret_path:
         creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)
     else:
-        print(
-            "ℹ️ 서비스 계정 키 파일이 없으므로 Application Default Credentials를 시도합니다."
-        )
-        creds, _ = google.auth.default(scopes=SCOPES)
+        try:
+            import subprocess
+
+            res = subprocess.run(
+                ["secret-tool", "lookup", "Title", "drive-api"],
+                capture_output=True,
+                text=True,
+            )
+            if res.stdout.strip():
+                data = json.loads(res.stdout.strip())
+                creds = Credentials.from_service_account_info(data, scopes=SCOPES)
+            else:
+                print(
+                    "ℹ️ 서비스 계정 키 파일이 없으므로 Application Default Credentials를 시도합니다."
+                )
+                creds, _ = google.auth.default(scopes=SCOPES)
+        except Exception:
+            print(
+                "ℹ️ 서비스 계정 키 파일이 없으므로 Application Default Credentials를 시도합니다."
+            )
+            creds, _ = google.auth.default(scopes=SCOPES)
 
     # cache_discovery=False 로 무한 지연 에러 원천 차단
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
@@ -67,8 +84,46 @@ def get_max_no(service, spreadsheet_id, sheet_title):
         return 0
 
 
+def route_web_rows(rows_data):
+    """
+    web 강좌의 행 데이터에서 Track(인덱스 2) 컬럼을 분석하여
+    1반(web1)과 2반(web2)으로 자동 분류합니다.
+    """
+    web1_tracks = {"15143", "01", "761", "web1", "웹1"}
+    web1_rows = []
+    web2_rows = []
+
+    for row in rows_data:
+        track = str(row[2]).strip() if len(row) > 2 else ""
+        if track in web1_tracks:
+            web1_rows.append(row)
+        else:
+            web2_rows.append(row)
+
+    return web1_rows, web2_rows
+
+
 def append_grades_to_sheet(rows_data, course="py"):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # course가 "web"으로 지정된 경우, 1반(web1)과 2반(web2)으로 자동 분기하여 각각의 시트에 기록
+    if course == "web":
+        web1_rows, web2_rows = route_web_rows(rows_data)
+        success = True
+        if web1_rows:
+            print(
+                f"📦 [웹 1반(web1)] {len(web1_rows)}개 행을 1반 시트로 분기 추가합니다."
+            )
+            if not append_grades_to_sheet(web1_rows, course="web1"):
+                success = False
+        if web2_rows:
+            print(
+                f"📦 [웹 2반(web2)] {len(web2_rows)}개 행을 2반 시트로 분기 추가합니다."
+            )
+            if not append_grades_to_sheet(web2_rows, course="web2"):
+                success = False
+        return success
+
     config = load_course_config(base_dir, course)
 
     if not config:
@@ -145,6 +200,25 @@ def upsert_grades_to_sheet(rows_data, course="py"):
     - 스크립트를 N번 실행해도 중복 데이터가 누적되지 않음.
     """
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # course가 "web"으로 지정된 경우, 1반(web1)과 2반(web2)으로 자동 분기하여 각각 멱등 동기화
+    if course == "web":
+        web1_rows, web2_rows = route_web_rows(rows_data)
+        success = True
+        if web1_rows:
+            print(
+                f"📦 [웹 1반(web1)] {len(web1_rows)}개 행을 1반 시트로 멱등 동기화합니다."
+            )
+            if not upsert_grades_to_sheet(web1_rows, course="web1"):
+                success = False
+        if web2_rows:
+            print(
+                f"📦 [웹 2반(web2)] {len(web2_rows)}개 행을 2반 시트로 멱등 동기화합니다."
+            )
+            if not upsert_grades_to_sheet(web2_rows, course="web2"):
+                success = False
+        return success
+
     config = load_course_config(base_dir, course)
 
     if not config:

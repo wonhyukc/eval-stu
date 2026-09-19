@@ -50,10 +50,12 @@
 ## 📊 성적 및 학생 관리 (Grade Management)
 
 
-- **전체 학생 (비공유, 교수 전용)**: [전체 학생(Google Sheets)](https://docs.google.com/spreadsheets/d/1lUdHWhyNDTZl9n7s48jn3FCrH6gcbQvGt1nkLBbIM9o/edit?gid=1889091726#gid=1889091726) *(서비스 계정 미공유, 교수 본인만 열람)*
-- **파이썬 4반 성적부**: [파이썬 4반 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit?gid=1514293361#gid=1514293361)
-- **웹프로그래밍 (1반 / 2반) 과제 및 성적부**: [web-stu0926 성적부(Google Sheets)](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit?gid=1892167835#gid=1892167835) *(⚠️ 대원칙: 이 시트에 기록할 때는 헤더, 사유, 내용 일체가 항상 100% 영어여야 함)*
-- **학생 명단 SSOT**: 별도 저장소인 **`../stu2603/5input/students/`가 유일한 단일 규칙 원천(SSOT)**입니다. 이 저장소(`eval-stu`)의 `5input/students`는 상대 심볼릭 링크(`../../stu2603/5input/students`)로 연결되어 읽기 전용으로 참조합니다. **`eval-stu` 내부에서 학생 명단을 직접 생성하거나 수정하지 마십시오.** 학생 추가·수정·eCampus 명단 갱신은 항상 `stu2603`에서 수행합니다.
+- **구글 스프레드시트 SSOT**: [`1docs/sheets.md`](file:///home/hyuk/prj/stu/eval-stu/1docs/sheets.md) *(4개 시트 ID, URL, 탭 구조, 시트 언어 정책의 유일한 원천)*
+  - 전체 학생 명부 (비공개, 교수 전용)
+  - 파이썬 4반 성적부 (`score`, `grade`)
+  - 웹프로그래밍 1반 (web1) 성적부 (100% 영어 기록)
+  - 웹프로그래밍 2반 (web2) 성적부 (100% 영어 기록)
+- **학생 명단 SSOT**: 별도 저장소인 **`../stu2603/5input/students/`가 유일한 단일 규칙 원천(SSOT)**입니다. 이 저장소(`eval-stu`)의 `5input/students`는 상대 심볼릭 링크(`../../stu2603/5input/students`)로 연결되어 읽기 전용으로 참조합니다(`py-students.md`, `wb-students.md`, `students_summary.md`). **`eval-stu` 내부에서 학생 명단을 직접 생성하거나 수정하지 마십시오.** 학생 추가·수정·eCampus 명단 갱신은 항상 `stu2603`에서 수행합니다.
 - **과제 이메일(0.x) 채점 정책 SSOT**: **[`1docs/score-email.md`](file:///home/hyuk/prj/stu/eval-stu/1docs/score-email.md)**
   - 마이크로 과제의 모든 채점 원칙(배점 티어, 유예시간, 순수 본문 검증, 감점 기준, 다중 발송 멱등성, 시트 데이터 포맷팅 등)은 `1docs/score-email.md`가 **단일 규칙 원천(SSOT)**입니다.
   - **핵심 요약**:
@@ -73,7 +75,7 @@
 ### 강의안 저장소 (`../stu2603`)
 
 - 강의안·과제 SSOT는 별도 저장소 `../stu2603`입니다. 이 저장소에서는 **읽기만** 하고, 수정은 stu2603 쪽에서 합니다.
-- 교차 참조는 심볼릭 링크로 연결: `1docs/assignment-micro.md`, `1docs/scores.md`, `5input/py`, `5input/web`, `5input/students`
+- 교차 참조는 심볼릭 링크로 연결: `1docs/sheets.md`, `1docs/assignment-micro.md`, `1docs/scores.md`, `5input/py`, `5input/web`, `5input/students`
 - 교차 링크는 **항상 상대경로**로 만듭니다(마운트 경로 변경에도 살아남도록). 깨진 링크는 pre-commit 훅이 차단합니다.
 
 ### 과목별 교재 폴더 (`../py2608-stu`, `../web2608-stu`)
@@ -89,7 +91,7 @@
 - **자격증명 파일 접근 금지**: `secret.json`, `credentials.json`, `token.json`, `service-account.json`은 읽지도, 출력하지도, 커밋하지도 않습니다.
 - **학생 개인정보 보호**: 성적 CSV/TSV, 학생 사진, 이메일 본문은 git에 추가하지 않습니다 (`output/`, `9output/`, `*.csv`, `*.tsv`는 gitignore 유지).
 - **파이썬 코드 검증**: `.py` 수정 후에는 `./bin/harness-check.sh`(Black·Flake8·Mypy·Pytest)를 통과해야 하며, pre-commit 훅이 강제합니다.
-- **출력 폴더 분리**: 출력 폴더는 두 곳입니다: `output/`(채점·점수 CSV), `9output/`(상호평가 배정 md, 등급 산출물). 코드가 각각 참조하므로 임의로 합치지 않습니다.
+- **크롬 자동화 시 메인 브라우저 무간섭 및 전용 프로필(`~/.config/eval-stu-grader`) 운영 원칙**: 사용자의 일상 업무용 메인 크롬(`~/.config/google-chrome`)은 **절대 종료하지도, 복사하지도, 접근하지도 않습니다(Zero-Interference)**. 자동화는 오직 독립된 고정 전용 디렉터리(`~/.config/eval-stu-grader`)의 단일 `Default` 프로필만을 백그라운드로 띄워 실행하며, 채점 종료 시 해당 전용 프로세스만 종료합니다. 프로필 번호 증식 및 메인 크롬 세션 만료를 원천 차단합니다. (상세 설계: `1docs/email-grader-plan.md` 참고)
 
 ---
 
