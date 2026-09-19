@@ -99,3 +99,35 @@ def test_grade_assignment_type_fields():
     res = grade_assignment(email_data, "0.4")
     assert res["type1"] == "hw"
     assert res["type2"] == "0.4"
+
+
+def test_sort_sheet_rows_4level():
+    from modules.sheet_updater import sort_sheet_rows
+
+    raw_data = [
+        ["1", "2", "890", "1", "1", "hw", "0.2", "Pass", "9/10", "A", "S1"],
+        ["2", "3", "742", "1", "1", "hw", "0.3", "Pass", "9/17", "B", "S2"],
+        ["3", "3", "741", "1", "1", "hw", "0.3", "Pass", "9/17", "C", "S3"],
+        ["4", "2", "741", "1", "1", "class", "", "Pass", "9/14", "D", "S4"],
+    ]
+    sorted_res = sort_sheet_rows(raw_data, renumber_desc=True)
+
+    # 1. 3주차가 2주차보다 위
+    assert sorted_res[0][1] == "3"
+    assert sorted_res[1][1] == "3"
+    assert sorted_res[2][1] == "2"
+    assert sorted_res[3][1] == "2"
+
+    # 2. 3주차 내에서 741이 742보다 위 (학번 오름차순)
+    assert sorted_res[0][2] == "741"
+    assert sorted_res[1][2] == "742"
+
+    # 3. 2주차 내에서 class가 hw보다 위 (Type1 오름차순)
+    assert sorted_res[2][5] == "class"
+    assert sorted_res[3][5] == "hw"
+
+    # 4. No 번호가 내림차순(4 down to 1)으로 재부여
+    assert sorted_res[0][0] == "4"
+    assert sorted_res[1][0] == "3"
+    assert sorted_res[2][0] == "2"
+    assert sorted_res[3][0] == "1"

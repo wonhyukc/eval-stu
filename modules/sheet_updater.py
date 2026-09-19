@@ -131,6 +131,55 @@ def route_web_rows(rows_data):
     return web1_rows, web2_rows
 
 
+def sort_sheet_rows(rows_data, renumber_desc=True):
+    """
+    11열 성적 데이터를 4단계 표준 정렬 순서로 정렬합니다:
+    1차: week 역순 (descending)
+    2차: Type1 오름차순 (ascending)
+    3차: Type2 오름차순 (ascending)
+    4차: ID 오름차순 (ascending)
+
+    renumber_desc=True인 경우 No를 맨 위(최신)부터 N down to 1로 재부여합니다.
+    """
+    normalized = [normalize_row_to_11cols(r) for r in rows_data]
+
+    def _sort_key(row):
+        # 1) week 역순
+        wk_str = str(row[1]).strip() if len(row) > 1 else ""
+        try:
+            wk_val = -int(wk_str)
+        except ValueError:
+            wk_val = 0
+
+        # 2) type1 오름차순
+        t1_str = str(row[5]).strip().lower() if len(row) > 5 else ""
+
+        # 3) type2 오름차순
+        t2_str = (
+            str(row[6]).replace("과제", "").replace("'", "").strip().lower()
+            if len(row) > 6
+            else ""
+        )
+
+        # 4) id 오름차순
+        id_str = str(row[2]).replace("'", "").strip() if len(row) > 2 else ""
+        try:
+            id_val = (0, int(id_str))
+        except ValueError:
+            id_val = (1, id_str) if id_str else (2, "")
+
+        return (wk_val, t1_str, t2_str, id_val)
+
+    sorted_list = sorted(normalized, key=_sort_key)
+
+    if renumber_desc:
+        total = len(sorted_list)
+        for idx, r in enumerate(sorted_list):
+            r[0] = str(total - idx)
+
+    return sorted_list
+
+
 def append_grades_to_sheet(rows_data, course="py"):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
