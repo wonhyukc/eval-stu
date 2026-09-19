@@ -1,11 +1,17 @@
 import os
 import json
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
+import re
+
+try:
+    from google.oauth2.service_account import Credentials
+    from googleapiclient.discovery import build
+    import google.auth
+except ImportError:
+    Credentials = None
+    build = None
+    google = None
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-
-import google.auth
 
 
 def load_course_config(base_dir, course="py"):
@@ -84,17 +90,39 @@ def get_max_no(service, spreadsheet_id, sheet_title):
         return 0
 
 
+def normalize_row_to_11cols(row):
+    """
+    행 데이터를 표준 11열 구조로 정규화합니다.
+    [No, wk, ID, Track, Score, Type1, Type2, Reason, Date, Name, Subject] (A~K)
+    구 9열 구조([No, StudentID, Track, Score, Type, Reason, Date, Name, Subject])가 들어오면
+    11열 구조로 자동 확장 변환합니다.
+    """
+    if len(row) == 9:
+        no, sid, track, score, ctype, reason, dt, name, subj = row
+        clean_t = str(ctype).replace("과제", "").replace("'", "").strip()
+        m = re.search(r"0\.(\d+)", clean_t)
+        wk = m.group(1) if m else ""
+        return [no, wk, sid, track, score, "hw", ctype, reason, dt, name, subj]
+    elif len(row) < 11:
+        extended = list(row) + [""] * (11 - len(row))
+        return extended
+    return list(row)
+
+
 def route_web_rows(rows_data):
     """
-    web 강좌의 행 데이터에서 Track(인덱스 2) 컬럼을 분석하여
+    web 강좌의 행 데이터에서 Track 컬럼을 분석하여
     1반(web1)과 2반(web2)으로 자동 분류합니다.
+    11열 구조: Track은 인덱스 3 (D열)
+    구 9열 구조: Track은 인덱스 2 (C열)
     """
     web1_tracks = {"15143", "01", "761", "web1", "웹1"}
     web1_rows = []
     web2_rows = []
 
     for row in rows_data:
-        track = str(row[2]).strip() if len(row) > 2 else ""
+        track_idx = 3 if len(row) > 9 else 2
+        track = str(row[track_idx]).strip() if len(row) > track_idx else ""
         if track in web1_tracks:
             web1_rows.append(row)
         else:
@@ -148,22 +176,28 @@ def append_grades_to_sheet(rows_data, course="py"):
 
     # 기존 데이터에서 최대 no 조회 후 새로 추가될 데이터에 순차적으로 no 할당
     max_no = get_max_no(service, spreadsheet_id, sheet_title)
-    for i, row in enumerate(rows_data):
-        row[0] = max_no + i + 1
-        # '유형(Type)' 컬럼(인덱스 4)에 대해, 구글 시트가 숫자로 자동 변환하지 못하도록 문자열 강제 포맷팅(') 적용
-        if len(row) > 4:
-            clean_type = str(row[4]).replace("과제", "").replace("'", "").strip()
-            row[4] = f"'{clean_type}"
-        # '메일제목(Subject)' 컬럼(인덱스 8)에 대해, 순수 숫자가 숫자로 자동 변환되지 않도록 문자열 강제 포맷팅(') 적용
-        if len(row) > 8:
-            clean_subject = str(row[8]).lstrip("'")
-            row[8] = f"'{clean_subject}"
+    normalized_rows = [normalize_row_to_11cols(r) for r in rows_data]
 
-    range_name = f"{sheet_title}!A:I"  # A~I열까지 데이터 기준으로 append
-    body = {"values": rows_data}
+    for i, row in enumerate(normalized_rows):
+        row[0] = max_no + i + 1
+        # '학번(ID)' 컬럼(인덱스 2)에 대해, 지수 표기 방지를 위해 문자열 강제 포맷팅(') 적용
+        if len(row) > 2 and row[2]:
+            clean_id = str(row[2]).lstrip("'")
+            row[2] = f"'{clean_id}"
+        # 'Type2' 컬럼(인덱스 6)에 대해, 구글 시트가 숫자로 자동 변환하지 못하도록 문자열 강제 포맷팅(') 적용
+        if len(row) > 6 and row[6]:
+            clean_type2 = str(row[6]).replace("과제", "").replace("'", "").strip()
+            row[6] = f"'{clean_type2}"
+        # '메일제목(Subject)' 컬럼(인덱스 10)에 대해, 순수 숫자가 숫자로 자동 변환되지 않도록 문자열 강제 포맷팅(') 적용
+        if len(row) > 10 and row[10]:
+            clean_subject = str(row[10]).lstrip("'")
+            row[10] = f"'{clean_subject}"
+
+    range_name = f"{sheet_title}!A:K"  # A~K열 11열 데이터 기준으로 append
+    body = {"values": normalized_rows}
 
     print(
-        f"📝 구글 시트 '{sheet_title}' 탭에 {len(rows_data)}개의 데이터 추가를 시도합니다..."
+        f"📝 구글 시트 '{sheet_title}' 탭에 {len(normalized_rows)}개의 데이터 추가를 시도합니다..."
     )
 
     try:
@@ -194,8 +228,8 @@ def append_grades_to_sheet(rows_data, course="py"):
 
 def upsert_grades_to_sheet(rows_data, course="py"):
     """
-    (StudentID, Type) 복합 키를 기준으로 멱등성(Idempotency)을 보장하는 Upsert 함수.
-    - 기존 행에 동일한 (학번, 과제유형)이 존재하면 해당 행을 갱신(Update).
+    (StudentID, Type1, Type2) 복합 키를 기준으로 멱등성(Idempotency)을 보장하는 Upsert 함수.
+    - 기존 행에 동일한 (학번, 대분류, 세부유형)이 존재하면 해당 행을 갱신(Update).
     - 존재하지 않으면 최하단에 신규 추가(Append).
     - 스크립트를 N번 실행해도 중복 데이터가 누적되지 않음.
     """
@@ -241,8 +275,8 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         print(f"❌ 오류: 시트 ID(gid={target_gid})를 찾을 수 없습니다.")
         return False
 
-    # 기존 시트의 전체 데이터 읽기 (2행부터)
-    range_all = f"{sheet_title}!A2:I"
+    # 기존 시트의 전체 데이터 읽기 (2행부터 A~K)
+    range_all = f"{sheet_title}!A2:K"
     try:
         res = (
             service.spreadsheets()
@@ -255,50 +289,71 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         print(f"⚠️ 기존 데이터 조회 실패: {e}")
         existing_rows = []
 
-    # 기존 데이터 인덱싱: (student_id, clean_type) -> row_index (1-based from A2, so row_number = idx + 2)
+    # 기존 데이터 인덱싱: (student_id, type1, type2) -> row_number (idx + 2)
     key_to_row_num = {}
     for idx, row in enumerate(existing_rows):
-        if len(row) > 4:
-            sid = str(row[1]).strip()
-            ctype = str(row[4]).replace("과제", "").replace("'", "").strip()
-            key_to_row_num[(sid, ctype)] = idx + 2
+        if len(row) > 6:  # 11열 기준: ID=2, Type1=5, Type2=6
+            sid = str(row[2]).replace("'", "").strip()
+            t1 = str(row[5]).strip()
+            t2 = str(row[6]).replace("과제", "").replace("'", "").strip()
+            key_to_row_num[(sid, t1, t2)] = idx + 2
+        elif len(row) > 4:  # 구 9열 기준 호환: ID=1, Type=4
+            sid = str(row[1]).replace("'", "").strip()
+            t1 = "hw"
+            t2 = str(row[4]).replace("과제", "").replace("'", "").strip()
+            key_to_row_num[(sid, t1, t2)] = idx + 2
 
     # 새 데이터 포맷팅 및 업데이트 / 신규 추가 분류
     rows_to_update = []  # (row_number, formatted_row)
     rows_to_append = []
 
     max_no = get_max_no(service, spreadsheet_id, sheet_title)
+    normalized_rows = [normalize_row_to_11cols(r) for r in rows_data]
 
-    for row in rows_data:
-        if len(row) > 4:
-            clean_type = str(row[4]).replace("과제", "").replace("'", "").strip()
-            row[4] = f"'{clean_type}"
-        # '메일제목(Subject)' 컬럼(인덱스 8)에 대해, 순수 숫자가 숫자로 자동 변환되지 않도록 문자열 강제 포맷팅(') 적용
-        if len(row) > 8:
-            clean_subject = str(row[8]).lstrip("'")
-            row[8] = f"'{clean_subject}"
-
-        if len(row) > 4:
-            sid = str(row[1]).strip()
-            key = (sid, clean_type)
-
-            if key in key_to_row_num:
-                # 기존 행 갱신 (No는 기존 행의 No 유지)
-                existing_row_num = key_to_row_num[key]
-                existing_row_idx = existing_row_num - 2
-                existing_no = (
-                    existing_rows[existing_row_idx][0]
-                    if len(existing_rows[existing_row_idx]) > 0
-                    else row[0]
-                )
-                row[0] = existing_no
-                rows_to_update.append((existing_row_num, row))
-            else:
-                # 신규 추가
-                max_no += 1
-                row[0] = max_no
-                rows_to_append.append(row)
+    for row in normalized_rows:
+        # ID 포맷팅 (인덱스 2)
+        if len(row) > 2 and row[2]:
+            clean_id = str(row[2]).replace("'", "").strip()
+            row[2] = f"'{clean_id}"
         else:
+            clean_id = ""
+
+        # Type1
+        t1 = str(row[5]).strip() if len(row) > 5 else "hw"
+        row[5] = t1
+
+        # Type2 포맷팅 (인덱스 6)
+        if len(row) > 6 and row[6]:
+            clean_type2 = str(row[6]).replace("과제", "").replace("'", "").strip()
+            row[6] = f"'{clean_type2}"
+        else:
+            clean_type2 = ""
+
+        # Subject 포맷팅 (인덱스 10)
+        if len(row) > 10 and row[10]:
+            clean_subject = str(row[10]).lstrip("'")
+            row[10] = f"'{clean_subject}"
+
+        key = (clean_id, t1, clean_type2)
+
+        if key in key_to_row_num:
+            # 기존 행 갱신 (No는 기존 행의 No 유지)
+            existing_row_num = key_to_row_num[key]
+            existing_row_idx = existing_row_num - 2
+            existing_no = (
+                existing_rows[existing_row_idx][0]
+                if (
+                    existing_row_idx < len(existing_rows)
+                    and len(existing_rows[existing_row_idx]) > 0
+                )
+                else row[0]
+            )
+            row[0] = existing_no
+            rows_to_update.append((existing_row_num, row))
+        else:
+            # 신규 추가
+            max_no += 1
+            row[0] = max_no
             rows_to_append.append(row)
 
     success = True
@@ -306,7 +361,7 @@ def upsert_grades_to_sheet(rows_data, course="py"):
     # 1. 기존 행 멱등 갱신 (Update)
     for row_num, row in rows_to_update:
         try:
-            update_range = f"{sheet_title}!A{row_num}:I{row_num}"
+            update_range = f"{sheet_title}!A{row_num}:K{row_num}"
             service.spreadsheets().values().update(
                 spreadsheetId=spreadsheet_id,
                 range=update_range,
@@ -325,7 +380,7 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         try:
             service.spreadsheets().values().append(
                 spreadsheetId=spreadsheet_id,
-                range=f"{sheet_title}!A:I",
+                range=f"{sheet_title}!A:K",
                 valueInputOption="USER_ENTERED",
                 insertDataOption="INSERT_ROWS",
                 body={"values": rows_to_append},

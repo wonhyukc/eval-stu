@@ -68,6 +68,8 @@ def grade_assignment(email_data, assignment_no, deadline_datetime=None):
 
     return {
         "total_score": score,
+        "type1": "hw",
+        "type2": str(assignment_no),
         "details": {
             "title_ok": is_valid_title,
             "time_ok": is_on_time,

@@ -12,7 +12,8 @@
                 "468"
             ],
             "output_suffix": "py",
-            "keyword": "과제"
+            "keyword": "과제",
+            "late_deadline_time": "09:00"
         },
         "web": {
             "sheet_id": "1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo",
@@ -26,7 +27,8 @@
                 "762"
             ],
             "output_suffix": "web",
-            "keyword": "assignment"
+            "keyword": "assignment",
+            "late_deadline_time": "13:00"
         },
         "web1": {
             "sheet_id": "1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk",
@@ -37,7 +39,8 @@
                 "761"
             ],
             "output_suffix": "web1",
-            "keyword": "assignment"
+            "keyword": "assignment",
+            "late_deadline_time": "16:00"
         },
         "web2": {
             "sheet_id": "1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo",
@@ -48,7 +51,8 @@
                 "762"
             ],
             "output_suffix": "web2",
-            "keyword": "assignment"
+            "keyword": "assignment",
+            "late_deadline_time": "13:00"
         }
     }
 }

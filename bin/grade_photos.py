@@ -247,12 +247,14 @@ def build_score_rows(
             )
             subject = "Google Photos Album"
 
-        # 컬럼 순서: no, sid, track, score, type, reason, date, name, subject
+        # 컬럼 순서: no, wk, sid, track, score, type1, type2, reason, date, name, subject (A~K, 11열)
         row = [
             "",  # no (upsert 시 자동 부여)
+            "1",  # wk (0.p = 1주차 프로필 사진 과제)
             sid_short,
             track,
             score,
+            "hw",
             "0.p",
             reason,
             today,
@@ -271,24 +273,20 @@ def build_score_rows(
 
 def upsert_top_insert(rows_data: list[list], course: str) -> bool:
     """
-    기존 시트 데이터를 읽어 (StudentID, Type) 키로 upsert.
+    기존 시트 데이터를 읽어 (StudentID, Type1, Type2) 키로 upsert.
     - 행 번호는 계속 증가 (기존 행 번호 유지, 신규 행은 max+1부터 순차 부여)
-    - 시트 표시는 번호 내림차순 (큰 번호 = 최신 = 맨 위)
-
-    동작:
-    1. 기존 시트 데이터 전체 읽기 (헤더 제외)
-    2. 새 행 upsert (동일 키 있으면 업데이트, 없으면 신규)
-    3. 신규 행에 max_no+1부터 순차 번호 부여 (기존 번호 유지)
-    4. 전체를 번호 내림차순 정렬 (큰 번호가 위)
-    5. 헤더 이후 전체 덮어쓰기
+    - 11열 구조 (A~K) 준수
     """
     config = load_course_config(BASE_DIR, course)
     if not config:
-        print(f"❌ settings.json에 '{course}' 설정 없음")
+        print(f"❌ '{course}' 설정 없음")
         return False
 
-    spreadsheet_id = config["sheet_id"]
-    target_gid = config["target_gid"]
+    spreadsheet_id = config.get("sheet_id")
+    target_gid = config.get("target_gid")
+    if not spreadsheet_id or target_gid is None:
+        print(f"❌ '{course}' sheet_id 또는 target_gid 오류")
+        return False
 
     service = get_sheet_service(BASE_DIR)
     sheet_title = get_target_sheet_title(service, spreadsheet_id, target_gid)
@@ -296,22 +294,27 @@ def upsert_top_insert(rows_data: list[list], course: str) -> bool:
         print(f"❌ gid={target_gid} 탭 없음")
         return False
 
-    # 기존 데이터 읽기 (헤더 제외, A2부터)
+    # 기존 데이터 읽기 (헤더 제외, A2부터 K까지)
     res = (
         service.spreadsheets()
         .values()
-        .get(spreadsheetId=spreadsheet_id, range=f"{sheet_title}!A2:I")
+        .get(spreadsheetId=spreadsheet_id, range=f"{sheet_title}!A2:K")
         .execute()
     )
     existing_rows: list[list] = res.get("values", [])
 
-    # (sid, type) → existing_row 인덱스
+    # (sid, type1, type2) → existing_row 인덱스
     key_to_idx: dict[tuple, int] = {}
     for idx, row in enumerate(existing_rows):
-        if len(row) > 4:
-            sid = str(row[1]).strip()
+        if len(row) > 6:  # 11열 기준: ID=2, Type1=5, Type2=6
+            sid = str(row[2]).strip().lstrip("'")
+            t1 = str(row[5]).strip()
+            ctype = str(row[6]).lstrip("'").replace("과제", "").strip()
+            key_to_idx[(sid, t1, ctype)] = idx
+        elif len(row) > 4:  # 9열 기준 호환: ID=1, Type=4
+            sid = str(row[1]).strip().lstrip("'")
             ctype = str(row[4]).lstrip("'").replace("과제", "").strip()
-            key_to_idx[(sid, ctype)] = idx
+            key_to_idx[(sid, "hw", ctype)] = idx
 
     # 현재 최대 번호 파악 (번호는 계속 증가)
     max_no = 0
@@ -327,15 +330,47 @@ def upsert_top_insert(rows_data: list[list], course: str) -> bool:
     new_rows = list(existing_rows)  # 복사
 
     for row in rows_data:
-        clean_type = str(row[4]).lstrip("'").replace("과제", "").strip()
-        sid = str(row[1]).strip()
-        key = (sid, clean_type)
+        # 11열 정규화
+        if len(row) == 9:
+            (
+                no_val,
+                sid_val,
+                trk_val,
+                scr_val,
+                typ_val,
+                rsn_val,
+                dt_val,
+                nm_val,
+                sbj_val,
+            ) = row
+            row = [
+                no_val,
+                "1",
+                sid_val,
+                trk_val,
+                scr_val,
+                "hw",
+                typ_val,
+                rsn_val,
+                dt_val,
+                nm_val,
+                sbj_val,
+            ]
+        elif len(row) < 11:
+            row = list(row) + [""] * (11 - len(row))
 
-        # Type 포맷팅 (구글 시트 자동변환 방지)
-        row[4] = f"'{clean_type}"
+        sid = str(row[2]).strip().lstrip("'")
+        t1 = str(row[5]).strip()
+        clean_type = str(row[6]).lstrip("'").replace("과제", "").strip()
+        key = (sid, t1, clean_type)
+
+        # ID 포맷팅
+        row[2] = f"'{sid}"
+        # Type2 포맷팅 (구글 시트 자동변환 방지)
+        row[6] = f"'{clean_type}"
         # Subject 포맷팅
-        if len(row) > 8:
-            row[8] = f"'{str(row[8]).lstrip(chr(39))}"
+        if len(row) > 10:
+            row[10] = f"'{str(row[10]).lstrip(chr(39))}"
 
         if key in key_to_idx:
             # 기존 행 갱신 (no 유지)
@@ -372,11 +407,11 @@ def upsert_top_insert(rows_data: list[list], course: str) -> bool:
     try:
         service.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
-            range=f"{sheet_title}!A2:I{len(new_rows) + 1}",
+            range=f"{sheet_title}!A2:K{len(new_rows) + 1}",
             valueInputOption="USER_ENTERED",
             body={"values": new_rows},
         ).execute()
-        print(f"✅ 완료")
+        print("✅ 완료")
         return True
     except Exception as e:
         print(f"❌ 시트 갱신 실패: {e}")

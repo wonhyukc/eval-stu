@@ -134,10 +134,39 @@ def extract_grades(
     # 이미 처리한 학번을 추적하여 중복 점수 부여를 방지하는 셋(set)
     seen_students = set()
 
-    # 헤더
-    output_rows.append(
-        ["no", "학번", "track", "점수", "유형", "이유", "날짜", "이름", "메일제목"]
-    )
+    # 헤더 (11열 구조)
+    if lang == "en":
+        output_rows.append(
+            [
+                "No",
+                "wk",
+                "ID",
+                "Track",
+                "Score",
+                "Type1",
+                "Type2",
+                "Reason",
+                "Date",
+                "Name",
+                "Subject",
+            ]
+        )
+    else:
+        output_rows.append(
+            [
+                "no",
+                "주차",
+                "학번",
+                "트랙",
+                "점수",
+                "유형1",
+                "유형2",
+                "이유",
+                "날짜",
+                "이름",
+                "메일제목",
+            ]
+        )
 
     if local_csv:
         if not os.path.exists(local_csv):
@@ -150,30 +179,59 @@ def extract_grades(
         with open(local_csv, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for row_data in reader:
-                student_id = row_data.get("학번", "").strip()
-                track_num = row_data.get("track", "").strip()
+                student_id = (
+                    row_data.get("ID", "").strip() or row_data.get("학번", "").strip()
+                )
+                track_num = (
+                    row_data.get("Track", "").strip()
+                    or row_data.get("track", "").strip()
+                    or row_data.get("트랙", "").strip()
+                )
 
                 # 과정별 허용된 트랙인지 확인 (예: 웹은 761, 762만)
                 if allowed_tracks and track_num not in allowed_tracks:
                     continue
 
                 try:
-                    score = float(row_data.get("점수", 0.0))
+                    score = float(row_data.get("Score") or row_data.get("점수") or 0.0)
                 except ValueError:
                     score = 0.0
 
-                task_num = row_data.get("유형", "").strip()
-                reason = row_data.get("이유", "").strip()
-                formatted_date = row_data.get("날짜", "").strip()
-                name = row_data.get("이름", "").strip()
-                short_subject = row_data.get("메일제목", "").strip()[:20]
+                task_num = (
+                    row_data.get("Type2", "").strip()
+                    or row_data.get("유형", "").strip()
+                )
+                wk_val = (
+                    row_data.get("wk", "").strip() or row_data.get("주차", "").strip()
+                )
+                type1_val = (
+                    row_data.get("Type1", "").strip()
+                    or row_data.get("유형1", "").strip()
+                    or "hw"
+                )
+                reason = (
+                    row_data.get("Reason", "").strip()
+                    or row_data.get("이유", "").strip()
+                )
+                formatted_date = (
+                    row_data.get("Date", "").strip() or row_data.get("날짜", "").strip()
+                )
+                name = (
+                    row_data.get("Name", "").strip() or row_data.get("이름", "").strip()
+                )
+                short_subject = (
+                    row_data.get("Subject", "").strip()
+                    or row_data.get("메일제목", "").strip()
+                )[:20]
 
                 output_rows.append(
                     [
                         "",
+                        wk_val,
                         student_id,
                         track_num,
                         score,
+                        type1_val,
                         task_num,
                         reason,
                         formatted_date,
@@ -345,12 +403,29 @@ def extract_grades(
                             else f"조건위반({','.join(violations)})"
                         )
 
+        # wk 추론
+        wk_match = re.search(r"0\.(\d+)", task_num)
+        if wk_match:
+            wk = wk_match.group(1)
+        elif task_num.lower() == "0.p":
+            wk = "1"
+        elif task_num.lower() == "0.a":
+            wk = "10"
+        elif task_num.lower() == "0.b":
+            wk = "11"
+        elif task_num.lower() == "0.c":
+            wk = "12"
+        else:
+            wk = ""
+
         output_rows.append(
             [
                 "",
+                wk,
                 student_id,
                 track_num,
                 score,
+                "hw",
                 task_num,
                 reason,
                 formatted_date,
@@ -359,6 +434,48 @@ def extract_grades(
             ]
         )
 
+    # 미제출자 0점 등록 (Gmail 수집 시에만 수행)
+    if not local_csv and emails:
+        # task_num에 따른 wk 추론
+        wk_match = re.search(r"0\.(\d+)", task_num)
+        if wk_match:
+            missing_wk = wk_match.group(1)
+        elif task_num.lower() == "0.p":
+            missing_wk = "1"
+        elif task_num.lower() == "0.a":
+            missing_wk = "10"
+        elif task_num.lower() == "0.b":
+            missing_wk = "11"
+        elif task_num.lower() == "0.c":
+            missing_wk = "12"
+        else:
+            missing_wk = ""
+
+        for s_id, s_track in id_to_track.items():
+            if allowed_tracks and s_track not in allowed_tracks:
+                continue
+            if s_id not in seen_students:
+                s_name = ""
+                for n_key, mapped_id in name_to_id.items():
+                    if mapped_id == s_id and "@" not in n_key:
+                        s_name = n_key
+                        break
+                output_rows.append(
+                    [
+                        "",
+                        missing_wk,
+                        s_id,
+                        s_track,
+                        0.0,
+                        "hw",
+                        task_num,
+                        "No submission" if lang == "en" else "미제출",
+                        "-",
+                        s_name,
+                        "-",
+                    ]
+                )
+
     output_path = os.path.join(
         base_dir, "9output", f"grades_output_{output_suffix}.csv"
     )
@@ -366,13 +483,13 @@ def extract_grades(
         writer = csv.writer(f)
         writer.writerows(output_rows)
 
-    print(f"✅ 총 {len(output_rows) - 1}명의 이메일(본인 발송분 제외)을 분석했습니다.")
+    print(f"✅ 총 {len(output_rows) - 1}명의 이메일/미제출 데이터를 처리했습니다.")
     print(f"✅ 저장된 '{output_path}' 파일 미리보기:\n")
 
     for row in output_rows[:15]:
         print(",".join(map(str, row)))
 
-    print("\n⬇️ 이제 추출된 데이터를 시트에 실제 기록(Append)합니다 ⬇️")
+    print("\n⬇️ 이제 추출된 데이터를 시트에 실제 기록(Append/Upsert)합니다 ⬇️")
     # 헤더(첫 번째 행)는 제외하고 순수 데이터만 배열에 담아 넘깁니다.
     data_to_append = output_rows[1:]
     if data_to_append:

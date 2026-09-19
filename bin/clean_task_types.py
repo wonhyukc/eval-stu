@@ -32,8 +32,8 @@ def clean_sheet(course):
         f"\n🚀 [{course.upper()} 과정] 구글 시트('{sheet_title}') E컬럼 데이터 분석 및 클렌징 시작..."
     )
 
-    # 대상 시트의 A열부터 E열까지의 전체 데이터를 가져옵니다. (E컬럼: 과제 유형)
-    range_name = f"{sheet_title}!A:E"
+    # 대상 시트의 A열부터 K열까지의 전체 데이터를 가져옵니다.
+    range_name = f"{sheet_title}!A:K"
     result = (
         service.spreadsheets()
         .values()
@@ -47,13 +47,29 @@ def clean_sheet(course):
         print("데이터가 없습니다.")
         return
 
+    header = values[0]
+    target_col_idx = None
+    for idx, col in enumerate(header):
+        c_clean = str(col).strip().lower()
+        if c_clean in ["type2", "유형2"]:
+            target_col_idx = idx
+            break
+        elif c_clean in ["type", "유형"] and target_col_idx is None:
+            target_col_idx = idx
+
+    if target_col_idx is None:
+        target_col_idx = 6 if len(header) > 9 else 4
+
+    col_letter = chr(ord("A") + target_col_idx)
+    id_col_idx = 2 if len(header) > 9 else 1
+
     updates = []
 
     for row_idx, row in enumerate(
         values[1:], start=2
     ):  # 1-based index, row 1 is header
-        if len(row) > 4:
-            original_val = str(row[4])
+        if len(row) > target_col_idx:
+            original_val = str(row[target_col_idx])
             clean_val = (
                 original_val.strip()
                 .replace("과제", "")
@@ -66,15 +82,20 @@ def clean_sheet(course):
 
             # 비정상 데이터 식별 (날짜 포맷이나 의미 없는 문자열 등)
             if "/" in clean_val:
+                sid_str = row[id_col_idx] if len(row) > id_col_idx else "?"
                 print(
-                    f"⚠️ [수동확인 요망] 행 {row_idx}: (학번: {row[1] if len(row) > 1 else '?'}) | 비정상 유형 값 발견: '{original_val}'"
+                    f"⚠️ [수동확인 요망] 행 {row_idx}: (학번: {sid_str}) "
+                    f"| 비정상 유형 값 발견: '{original_val}'"
                 )
 
             # 구글 시트에 문자열(Text)로 강제 지정되도록 ' 접두어 추가
             target_val = f"'{clean_val}"
 
             updates.append(
-                {"range": f"{sheet_title}!E{row_idx}", "values": [[target_val]]}
+                {
+                    "range": f"{sheet_title}!{col_letter}{row_idx}",
+                    "values": [[target_val]],
+                }
             )
 
     if updates:

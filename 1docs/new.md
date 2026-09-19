@@ -1,7 +1,7 @@
 # 채점 체계 전면 개편 계획 (Type1/Type2 분리 및 정책 갱신)
 
 > **작성일**: 2026-09-19
-> **상태**: 계획 (Plan)
+> **상태**: 완료 (Completed)
 > **관련 이슈**: 아래 GitHub 이슈 참조
 
 ---
@@ -14,7 +14,8 @@
 |:---:|:---:|---|---|
 | A | `No` | 일련번호 (연속 증가) | |
 | B | `wk` | 주차 | **신규 추가** |
-| C~D | `ID` | 학번 (D열 숨김) | |
+| C | `ID` | 학번 | |
+| D | `Track` | 트랙번호 | **사용자 피드백 반영 (트랙번호)** |
 | E | `Score` | 점수 | |
 | F | `Type1` | **대분류**: `hw`, `class`, `mid`, `fin` | **신규** |
 | G | `Type2` | **세부유형**: `0.p`, `0.2`, `0.3` 등 (hw만) | **기존 Type → 이동** |
@@ -46,7 +47,7 @@
 ### 1. 시트 헤더: `Type` → `Type1` + `Type2` 분리
 
 **Before**: `No | StudentID | Track | Score | Type | Reason | Date | Name | Subject` (9열, A~I)
-**After**: `No | wk | ID | (숨김) | Score | Type1 | Type2 | Reason | Date | Name | Subject` (11열, A~K)
+**After**: `No | wk | ID | Track | Score | Type1 | Type2 | Reason | Date | Name | Subject` (11열, A~K)
 
 - `Type1`: 4개 대분류 (`hw`, `class`, `mid`, `fin`)
 - `Type2`: hw일 때만 과제 번호 (`0.x`), 나머지는 빈칸
