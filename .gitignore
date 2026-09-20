@@ -34,3 +34,6 @@ gwsServiceAccnt-mail.json
 .vscode/
 tmp/
 9output/
+
+# 자동 채점 로그 (개인정보 포함 가능)
+logs/*.log
