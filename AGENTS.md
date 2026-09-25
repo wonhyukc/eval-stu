@@ -56,6 +56,7 @@
   - 웹프로그래밍 1반 (web1) 성적부 (100% 영어 기록)
   - 웹프로그래밍 2반 (web2) 성적부 (100% 영어 기록)
 - **학생 명단 SSOT**: 별도 저장소인 **`../stu2603/5input/students/`가 유일한 단일 규칙 원천(SSOT)**입니다. 이 저장소(`eval-stu`)의 `5input/students`는 상대 심볼릭 링크(`../../stu2603/5input/students`)로 연결되어 읽기 전용으로 참조합니다(`py-students.md`, `wb-students.md`, `students_summary.md`). **`eval-stu` 내부에서 학생 명단을 직접 생성하거나 수정하지 마십시오.** 학생 추가·수정·eCampus 명단 갱신은 항상 `stu2603`에서 수행합니다.
+- **마감 시간 SSOT**: **[`5input/deadline.md`](file:///home/hyuk/prj/stu/eval-stu/5input/deadline.md)**가 주차별 마감 시간(deadline, email deadline)의 **유일한 단일 규칙 원천(SSOT)**입니다. 코드에서 마감 시간을 하드코딩하지 않으며, 반드시 이 파일을 읽어 사용합니다. 마감 일정 변경 시 이 파일만 수정합니다.
 - **과제 이메일(0.x) 채점 정책 SSOT**: **[`1docs/score-email.md`](file:///home/hyuk/prj/stu/eval-stu/1docs/score-email.md)**
   - 마이크로 과제의 모든 채점 원칙(배점 티어, 유예시간, 순수 본문 검증, 감점 기준, 다중 발송 멱등성, 시트 데이터 포맷팅 등)은 `1docs/score-email.md`가 **단일 규칙 원천(SSOT)**입니다.
   - **핵심 요약**:
