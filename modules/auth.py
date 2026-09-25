@@ -1,75 +1,103 @@
+import json
+import os
 import os.path
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+import subprocess
+
+from google.oauth2.service_account import Credentials as SACredentials
 from googleapiclient.discovery import build
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+USER_EMAIL = "wonhyukc@stu.ac.kr"
 
 
-import google.auth
+def _resolve_service_account_creds():
+    """
+    sheet_updater.py와 동일한 우선순위로 서비스 계정을 탐색합니다:
+      1) 프로젝트 루트의 secret.json
+      2) ~/nvme_data/prj/exchange/service-account.json
+      3) secret-tool lookup Title drive-api (KeePass/Keyring)
+    """
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidates = [
+        os.path.join(base_dir, "secret.json"),
+        os.path.expanduser("~/nvme_data/prj/exchange/service-account.json"),
+    ]
+    secret_path = next((p for p in candidates if os.path.exists(p)), None)
+
+    if secret_path:
+        return SACredentials.from_service_account_file(secret_path, scopes=SCOPES)
+
+    # secret-tool (KeePass/Keyring) 폴백
+    try:
+        res = subprocess.run(
+            ["secret-tool", "lookup", "Title", "drive-api"],
+            capture_output=True,
+            text=True,
+        )
+        if res.stdout.strip():
+            data = json.loads(res.stdout.strip())
+            return SACredentials.from_service_account_info(data, scopes=SCOPES)
+    except Exception:
+        pass
+
+    return None
 
 
 def get_gmail_service(credentials_file="credentials.json", token_file="token.json"):
     """
-    Google OAuth 2.0 흐름을 통해 Gmail API(읽기 전용) 서비스 객체를 반환합니다.
-    token.json이 없거나 만료된 경우 브라우저를 열어 최초 로그인을 유도합니다.
-    WIF 환경 등 credentials.json이 없는 경우 Application Default Credentials를 사용합니다.
-    """
-    creds = None
+    Gmail API(읽기 전용) 서비스 객체를 반환합니다.
 
-    # 이전에 저장된 인증 토큰이 있는지 확인
+    인증 우선순위:
+      1) 서비스 계정 + DWD (sheet_updater.py와 동일 경로)
+      2) 기존 OAuth token.json
+      3) OAuth credentials.json → 브라우저 인증 흐름
+    """
+    # ── 1) 서비스 계정 + Domain-Wide Delegation ──
+    sa_creds = _resolve_service_account_creds()
+    if sa_creds:
+        delegated = sa_creds.with_subject(USER_EMAIL)
+        try:
+            service = build("gmail", "v1", credentials=delegated, cache_discovery=False)
+            # 연결 테스트 (DWD 미설정이면 여기서 예외)
+            service.users().getProfile(userId="me").execute()
+            return service
+        except Exception as e:
+            print(f"⚠️ 서비스 계정 DWD 실패 (OAuth 폴백): {e}")
+
+    # ── 2) 기존 OAuth token.json ──
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+
+    creds = None
     if os.path.exists(token_file):
         creds = Credentials.from_authorized_user_file(token_file, SCOPES)
 
-    # 유효한 인증 정보가 없으면, 인증(OAuth) 처리 또는 WIF 시도
-    if not creds or not creds.valid:
-        if not os.path.exists(credentials_file):
-            print(
-                "ℹ️ credentials.json이 없으므로 WIF(Application Default Credentials)를 시도합니다."
-            )
-            creds, _ = google.auth.default(scopes=SCOPES)
-            from google.auth import impersonated_credentials
+    if creds and creds.valid:
+        return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
-            # WIF 환경에서 DWD(도메인 전체 위임)를 적용하기 위해 명시적으로 subject를 추가합니다.
-            target_principal = "fedora-2603@drive-project-84200.iam.gserviceaccount.com"
+    # ── 3) OAuth 브라우저 인증 흐름 ──
+    if creds and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+    elif os.path.exists(credentials_file):
+        from google_auth_oauthlib.flow import InstalledAppFlow
 
-            # google-github-actions/auth 가 이미 impersonated_credentials 를 반환하는 경우
-            if (
-                hasattr(creds, "source_credentials")
-                and getattr(creds, "service_account_email", None) == target_principal
-            ):
-                creds = impersonated_credentials.Credentials(
-                    source_credentials=creds,
-                    target_principal=target_principal,
-                    target_scopes=SCOPES,
-                    subject="wonhyukc@stu.ac.kr",
-                )
-            else:
-                creds = impersonated_credentials.Credentials(
-                    source_credentials=creds,
-                    target_principal=target_principal,
-                    target_scopes=SCOPES,
-                    subject="wonhyukc@stu.ac.kr",
-                )
-            return build("gmail", "v1", credentials=creds)
+        flow = InstalledAppFlow.from_client_secrets_file(credentials_file, SCOPES)
+        creds = flow.run_local_server(port=0)
+    else:
+        raise RuntimeError(
+            "❌ Gmail 인증 수단 없음: "
+            "서비스 계정(DWD), token.json, credentials.json 모두 없습니다.\n"
+            "  → drive-project-84200 콘솔에서 OAuth 클라이언트(데스크톱)를 만들고\n"
+            "    credentials.json을 프로젝트 루트에 저장하세요."
+        )
 
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(credentials_file, SCOPES)
-            creds = flow.run_local_server(port=0)
+    with open(token_file, "w") as token:
+        token.write(creds.to_json())
 
-        # 다음 실행을 위해 토큰 저장
-        with open(token_file, "w") as token:
-            token.write(creds.to_json())
-
-    service = build("gmail", "v1", credentials=creds)
-    return service
+    return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
 
 if __name__ == "__main__":
-    # 테스트용 실행 코드 (스크립트 단독 실행 시 토큰 생성 여부 확인)
     print("Gmail API 인증 모듈 테스트 중...")
     service = get_gmail_service()
     profile = service.users().getProfile(userId="me").execute()

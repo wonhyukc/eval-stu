@@ -90,7 +90,8 @@ def extract_gmail_interactive(
     new_rows = []
 
     with sync_playwright() as p:
-        user_data_dir = os.path.expanduser("~/.config/google-chrome")
+        user_data_dir = os.path.expanduser("~/.config/eval-stu-grader")
+        os.makedirs(user_data_dir, exist_ok=True)
         context = p.chromium.launch_persistent_context(
             user_data_dir,
             headless=False,
@@ -101,7 +102,6 @@ def extract_gmail_interactive(
             ),
             args=[
                 "--disable-blink-features=AutomationControlled",
-                "--profile-directory=Profile 10",
             ],
         )
         page = context.pages[0] if context.pages else context.new_page()

@@ -1,15 +1,20 @@
 import os
 import json
 import re
+from typing import Any
+
+Credentials: Any
+build: Any
+google: Any
 
 try:
-    from google.oauth2.service_account import Credentials
-    from googleapiclient.discovery import build
-    import google.auth
+    from google.oauth2.service_account import Credentials  # type: ignore[no-redef]
+    from googleapiclient.discovery import build  # type: ignore[no-redef]
+    import google.auth  # type: ignore[no-redef]
 except ImportError:
-    Credentials = None
-    build = None
-    google = None
+    Credentials = None  # type: ignore[no-redef]
+    build = None  # type: ignore[no-redef]
+    google = None  # type: ignore[no-redef]
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
