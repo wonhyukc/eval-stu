@@ -3,8 +3,9 @@
 # 이메일 과제(0.x) 채점 래퍼
 #
 # 사용법:
-#   ./bin/grade.sh 0.4          # 크롤링 + CSV 저장 (시트 X)
+#   ./bin/grade.sh 0.4          # 크롤링 + CSV 저장
 #   ./bin/grade.sh 0.4 sync     # CSV → 구글 시트 업로드
+#   ./bin/grade.sh 0.4 sort     # 구글 시트 정렬
 # ────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -12,7 +13,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 PYTHON="${ROOT_DIR}/.venv/bin/python"
 GRADER="${ROOT_DIR}/bin/extract_emails.py"
-OUTPUT_DIR="${ROOT_DIR}/9output"
 
 # ── 인자 없으면 사용법 출력 ──
 if [[ $# -eq 0 ]]; then
@@ -22,15 +22,13 @@ if [[ $# -eq 0 ]]; then
 사용법:
   ./bin/grade.sh <과제번호>           # 1단계: Gmail 크롤링 → CSV 저장
   ./bin/grade.sh <과제번호> sync      # 2단계: CSV → 구글 시트 업로드
+  ./bin/grade.sh <과제번호> sort      # 3단계: 구글 시트 정렬 (주차↓ 학번↑)
 
 예시:
   ./bin/grade.sh 0.4                 # Gmail에서 메일 수집 + 채점 → CSV
   ./bin/grade.sh 4                   # 위와 동일 (0. 자동 접두)
   ./bin/grade.sh 0.4 sync            # CSV 확인 후 시트에 반영
-
-흐름:
-  1단계) 크롬이 열리고 Gmail 검색 → 채점 → 9output/ 에 CSV 저장
-  2단계) CSV를 확인·수정한 뒤 sync로 구글 시트에 반영
+  ./bin/grade.sh 0.4 sort            # py 시트 정렬 (주차 역순 + 학번)
 EOF
   exit 0
 fi
@@ -46,9 +44,22 @@ fi
 # 0.4 → 4  (주차 번호만 추출)
 WEEK="${TASK#0.}"
 
-if [[ "$ACTION" == "sync" ]]; then
+if [[ "$ACTION" == "sort" ]]; then
+  # ── 3단계: 구글 시트 정렬 ──
+  echo ""
+  echo "═══════════════════════════════════════════════"
+  echo "  🔄 구글 시트 정렬 (주차 역순 → 학번 오름차순)"
+  echo "═══════════════════════════════════════════════"
+  echo ""
+
+  "$PYTHON" -c "
+from modules.sheet_updater import sort_sheet_remote
+# py 시트
+sort_sheet_remote(course='py')
+"
+
+elif [[ "$ACTION" == "sync" ]]; then
   # ── 2단계: CSV → 구글 시트 ──
-  # CSV 파일 자동 탐색 (여러 경로 지원)
   CSV_FILE=""
   for candidate in \
     "${ROOT_DIR}/output/mail$(printf '%02d' "$WEEK" 2>/dev/null || echo "$WEEK").csv" \

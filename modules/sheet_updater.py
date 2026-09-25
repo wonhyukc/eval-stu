@@ -192,6 +192,78 @@ def sort_sheet_rows(rows_data, renumber_desc=True):
     return sorted_list
 
 
+def sort_sheet_remote(course="py"):
+    """구글 시트에서 데이터를 읽어 정렬한 뒤 덮어쓴다.
+
+    정렬 기준: 1차 주차 역순 → 2차 Type1 → 3차 Type2 → 4차 학번 오름차순
+    No는 맨 위부터 N down to 1로 재부여.
+    """
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config = load_course_config(base_dir, course)
+    if not config:
+        print(f"❌ 오류: settings.json에 '{course}' 과정 설정 없음")
+        return False
+
+    spreadsheet_id = config.get("sheet_id")
+    target_gid = config.get("target_gid")
+    if not spreadsheet_id or target_gid is None:
+        print(f"❌ 오류: '{course}' sheet_id 또는 target_gid 없음")
+        return False
+
+    service = get_sheet_service(base_dir)
+    sheet_title = get_target_sheet_title(service, spreadsheet_id, target_gid)
+    if not sheet_title:
+        print(f"❌ 오류: gid={target_gid} 시트를 찾을 수 없음")
+        return False
+
+    # 1) 시트에서 전체 데이터 읽기 (헤더 제외)
+    range_name = f"{sheet_title}!A:K"
+    result = (
+        service.spreadsheets()
+        .values()
+        .get(spreadsheetId=spreadsheet_id, range=range_name)
+        .execute()
+    )
+    all_rows = result.get("values", [])
+    if len(all_rows) < 2:
+        print("⚠️ 정렬할 데이터가 없습니다.")
+        return False
+
+    header = all_rows[0]
+    data_rows = all_rows[1:]
+    print(f"📊 {sheet_title}: {len(data_rows)}행 읽기 완료")
+
+    # 2) 정렬
+    sorted_rows = sort_sheet_rows(data_rows, renumber_desc=True)
+
+    # 3) 주차를 숫자로, 학번을 끝3자리 텍스트로 정규화
+    for row in sorted_rows:
+        if len(row) > 1 and row[1]:
+            try:
+                row[1] = int(str(row[1]).strip().replace("'", ""))
+            except ValueError:
+                pass
+        if len(row) > 2 and row[2]:
+            clean_id = str(row[2]).lstrip("'").strip()
+            last3 = clean_id[-3:] if len(clean_id) >= 3 else clean_id
+            row[2] = f"'{last3}"
+
+    # 4) 시트에 덮어쓰기 (헤더 + 정렬된 데이터)
+    write_range = f"{sheet_title}!A1:K{len(sorted_rows) + 1}"
+    body = {"values": [header] + sorted_rows}
+    service.spreadsheets().values().update(
+        spreadsheetId=spreadsheet_id,
+        range=write_range,
+        valueInputOption="USER_ENTERED",
+        body=body,
+    ).execute()
+
+    print(
+        f"✅ {sheet_title} 정렬 완료: {len(sorted_rows)}행 (주차 역순 → 학번 오름차순)"
+    )
+    return True
+
+
 def append_grades_to_sheet(rows_data, course="py"):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
