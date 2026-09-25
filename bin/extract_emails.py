@@ -718,6 +718,37 @@ def extract_gmail_interactive(
             "이름",
             "메일제목",
         ]
+
+        def _csv_row_sort_key(r):
+            # 1. 트랙
+            t_str = str(r.get("track", "")).strip()
+            try:
+                t_val = (0, int(t_str))
+            except ValueError:
+                t_val = (1, t_str)
+
+            # 2. 주차 (유형: '0.4' 등에서 주차 추출)
+            type_str = str(r.get("유형", "")).strip()
+            m = re.search(r"0\.(\d+)", type_str)
+            if m:
+                w_val = int(m.group(1))
+            else:
+                try:
+                    w_val = int(type_str)
+                except ValueError:
+                    w_val = 999
+
+            # 3. 학번
+            id_str = str(r.get("학번", "")).strip()
+            try:
+                id_val = (0, int(id_str))
+            except ValueError:
+                id_val = (1, id_str)
+
+            return (t_val, w_val, id_val)
+
+        new_rows.sort(key=_csv_row_sort_key)
+
         with open(out_path, "w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
