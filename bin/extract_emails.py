@@ -67,8 +67,67 @@ def get_time_window():
     return start_time, deadline
 
 
+def _upload_rows_to_sheet(data_to_append):
+    """트랙 번호 기반으로 py/web 시트에 자동 분기 업로드."""
+    from modules.sheet_updater import append_grades_to_sheet
+
+    py_tracks = {"14712", "04", "468"}
+    py_rows = [
+        r
+        for r in data_to_append
+        if str(r[2]).strip("'") in py_tracks or str(r[2]).strip("'").startswith("4")
+    ]
+    web_rows = [r for r in data_to_append if r not in py_rows]
+
+    if py_rows:
+        print(f"  📦 [파이썬 4반] {len(py_rows)}건 → py 시트")
+        append_grades_to_sheet(py_rows, course="py")
+    if web_rows:
+        print(f"  📦 [웹 1·2반] {len(web_rows)}건 → web 시트 (자동 분반)")
+        append_grades_to_sheet(web_rows, course="web")
+
+
+def sync_csv_to_sheet(csv_path):
+    """이미 저장된 CSV 파일을 읽어 구글 시트에 업로드."""
+    if not os.path.exists(csv_path):
+        print(f"❌ CSV 파일을 찾을 수 없습니다: {csv_path}")
+        return
+
+    with open(csv_path, "r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    if not rows:
+        print("⚠️ CSV에 데이터가 없습니다.")
+        return
+
+    data_to_append = []
+    for r in rows:
+        data_to_append.append(
+            [
+                "",
+                r.get("학번", ""),
+                r.get("track", ""),
+                r.get("점수", ""),
+                r.get("유형", ""),
+                r.get("이유", ""),
+                r.get("날짜", ""),
+                r.get("이름", ""),
+                r.get("메일제목", ""),
+            ]
+        )
+
+    print(f"📄 CSV에서 {len(data_to_append)}건 로드 완료: {csv_path}")
+    _upload_rows_to_sheet(data_to_append)
+    print("✅ 시트 동기화 완료")
+
+
 def extract_gmail_interactive(
-    target_week=None, allowed_tracks=None, track_names=None, require_attachment=False
+    target_week=None,
+    allowed_tracks=None,
+    track_names=None,
+    require_attachment=False,
+    skip_sheet=False,
 ):
     print("Loading student roster...")
     name_to_id, id_to_track, id_to_names = parse_students()
@@ -416,6 +475,7 @@ def extract_gmail_interactive(
 
 
 def run_all_grading_interactive():
+    skip_sheet = False
     print("Loading student roster...")
     name_to_id, id_to_track, id_to_names = parse_students()
 
@@ -717,25 +777,13 @@ def run_all_grading_interactive():
                         ]
                     )
 
-                print(f"구글 시트에 '{config['week_name']}' 과제 데이터 추가 시도...")
-                from modules.sheet_updater import append_grades_to_sheet
-
-                # 트랙 번호 기반으로 py / web 시트 자동 분기
-                py_tracks = {"14712", "04", "468"}
-                py_rows = [
-                    r
-                    for r in data_to_append
-                    if str(r[2]).strip("'") in py_tracks
-                    or str(r[2]).strip("'").startswith("4")
-                ]
-                web_rows = [r for r in data_to_append if r not in py_rows]
-
-                if py_rows:
-                    print(f"  📦 [파이썬 4반] {len(py_rows)}건 → py 시트")
-                    append_grades_to_sheet(py_rows, course="py")
-                if web_rows:
-                    print(f"  📦 [웹 1·2반] {len(web_rows)}건 → web 시트 (자동 분반)")
-                    append_grades_to_sheet(web_rows, course="web")
+                if not skip_sheet:
+                    print(
+                        f"구글 시트에 '{config['week_name']}' 과제 데이터 추가 시도..."
+                    )
+                    _upload_rows_to_sheet(data_to_append)
+                else:
+                    print("ℹ️ --no-sheet 옵션: 시트 저장 건너뜀")
             else:
                 print(f"⚠️ 과제 {task_key}에 대해 저장할 데이터가 없습니다.")
         context.close()
@@ -767,21 +815,34 @@ if __name__ == "__main__":
         help="첨부 파일이 있어야 정상으로 간주",
     )
     parser.add_argument(
+        "--no-sheet",
+        action="store_true",
+        help="크롤링 + CSV 저장만 수행하고 구글 시트 업로드는 건너뜀",
+    )
+    parser.add_argument(
+        "--from-csv",
+        type=str,
+        default=None,
+        help="기존 CSV 파일 경로를 지정하여 시트에만 업로드 (크롤링 건너뜀)",
+    )
+    parser.add_argument(
         "--run-all",
         action="store_true",
         help="py 과정의 0.7 ~ 0.c 과제를 일괄적으로 대화형 스크래핑 및 채점 진행",
     )
     args = parser.parse_args()
 
-    track_map = {"py": "468", "web1": "761", "web2": "762"}
-    allowed_tracks = [track_map[t] for t in args.tracks if t in track_map]
-
-    if args.run_all:
+    if args.from_csv:
+        sync_csv_to_sheet(args.from_csv)
+    elif args.run_all:
         run_all_grading_interactive()
     else:
+        track_map = {"py": "468", "web1": "761", "web2": "762"}
+        allowed_tracks = [track_map[t] for t in args.tracks if t in track_map]
         extract_gmail_interactive(
             target_week=args.week,
             allowed_tracks=allowed_tracks,
             track_names=args.tracks,
             require_attachment=args.require_attachment,
+            skip_sheet=args.no_sheet,
         )
