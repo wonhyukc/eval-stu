@@ -8,16 +8,16 @@ from bin.extract_emails import get_time_window, parse_students
 
 
 def test_get_time_window():
+    # 인자 없이 호출 시 폴백: start < deadline, 간격 7일 이내
     start_dt, deadline_dt = get_time_window()
+    assert start_dt < deadline_dt
 
-    # 마감일은 반드시 월요일 09:00 이어야 함 (weekday() == 0)
-    assert deadline_dt.weekday() == 0
-    assert deadline_dt.hour == 9
-    assert deadline_dt.minute == 0
-
-    # 시작일은 마감일로부터 정확히 7일 전이어야 함
-    expected_start = deadline_dt - timedelta(days=7)
-    assert start_dt == expected_start
+    # 주차 지정 시 deadline.md에서 읽어야 함
+    start_dt4, deadline_dt4 = get_time_window("4")
+    assert start_dt4 < deadline_dt4
+    # 4주차 email deadline = 9/25 0:00 → start는 3주차 deadline(9/18 0:00)
+    assert deadline_dt4.month == 9
+    assert deadline_dt4.day == 25
 
 
 def test_parse_students():

@@ -57,14 +57,40 @@ def parse_students():
     return name_to_id, id_to_track, id_to_names
 
 
-def get_time_window():
+def get_time_window(target_week=None):
+    """deadline.md에서 email deadline을 읽어 시간 윈도우를 반환."""
     now = datetime.now(KST)
-    days_since_monday = now.weekday()
-    deadline = now.replace(hour=9, minute=0, second=0, microsecond=0) - timedelta(
-        days=days_since_monday
-    )
-    start_time = deadline - timedelta(days=7)
-    return start_time, deadline
+    year = now.year
+
+    deadline_path = os.path.join(base_dir, "5input", "deadline.md")
+    deadlines = {}
+    if os.path.exists(deadline_path):
+        with open(deadline_path, "r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.strip().split("\t")
+                if len(parts) >= 3 and parts[0].isdigit() and parts[2]:
+                    wk = int(parts[0])
+                    try:
+                        dt = datetime.strptime(
+                            f"{year}/{parts[2].strip()}", "%Y/%m/%d %H:%M"
+                        )
+                        deadlines[wk] = dt.replace(tzinfo=KST)
+                    except ValueError:
+                        pass
+
+    if target_week and target_week.isdigit():
+        wk = int(target_week)
+        if wk in deadlines:
+            deadline = deadlines[wk]
+            # 시작: 이전 주차 마감 또는 마감 7일 전
+            prev_deadline = deadlines.get(wk - 1)
+            start_time = (
+                prev_deadline if prev_deadline else deadline - timedelta(days=7)
+            )
+            return start_time, deadline
+
+    # 폴백: 현재 시각 기준 7일 전
+    return now - timedelta(days=7), now
 
 
 def _upload_rows_to_sheet(data_to_append):
@@ -134,7 +160,7 @@ def extract_gmail_interactive(
     print("Loading student roster...")
     name_to_id, id_to_track, id_to_names = parse_students()
 
-    start_dt, deadline_dt = get_time_window()
+    start_dt, deadline_dt = get_time_window(target_week)
     print(
         f"Time Window: {start_dt.strftime('%Y-%m-%d %H:%M')} ~ {deadline_dt.strftime('%Y-%m-%d %H:%M')}"
     )
