@@ -137,6 +137,127 @@ def _upload_rows_to_sheet(data_to_append):
         append_grades_to_sheet(web_rows, course="web")
 
 
+def print_grading_summary(rows):
+    """채점 결과를 반별 1.0점 만점 5단계 티어로 집계하여 표로 출력."""
+    if not rows:
+        return
+
+    _, id_to_track, _ = parse_students()
+    py_tracks = {"14712", "04", "468"}
+    web1_tracks = {"15143", "01", "761", "web1", "웹1"}
+    web2_tracks = {"15144", "02", "762", "web2", "웹2"}
+
+    targets = {
+        "4": sum(
+            1 for t in id_to_track.values() if t in py_tracks or t.startswith("4")
+        ),
+        "1": sum(1 for t in id_to_track.values() if t in web1_tracks),
+        "2": sum(1 for t in id_to_track.values() if t in web2_tracks),
+    }
+
+    if targets["4"] == 0:
+        targets["4"] = 14
+    if targets["1"] == 0:
+        targets["1"] = 31
+    if targets["2"] == 0:
+        targets["2"] = 32
+
+    stats = {
+        "4": {
+            "target": targets["4"],
+            "1점": 0,
+            "0.9점": 0,
+            "0.7점": 0,
+            "0.5점": 0,
+            "0.2점": 0,
+            "0점": 0,
+            "total": 0,
+        },
+        "1": {
+            "target": targets["1"],
+            "1점": 0,
+            "0.9점": 0,
+            "0.7점": 0,
+            "0.5점": 0,
+            "0.2점": 0,
+            "0점": 0,
+            "total": 0,
+        },
+        "2": {
+            "target": targets["2"],
+            "1점": 0,
+            "0.9점": 0,
+            "0.7점": 0,
+            "0.5점": 0,
+            "0.2점": 0,
+            "0점": 0,
+            "total": 0,
+        },
+    }
+
+    for r in rows:
+        track = str(r.get("track", "")).strip()
+        score_val = r.get("점수", "")
+        reason_val = str(r.get("이유", ""))
+
+        if track in py_tracks or track.startswith("4"):
+            cls_key = "4"
+        elif track in web1_tracks:
+            cls_key = "1"
+        else:
+            cls_key = "2"
+
+        try:
+            s = float(score_val)
+        except (ValueError, TypeError):
+            s = 0.0
+
+        if s >= 2.0 or (
+            s == 1.0
+            and "지각" not in reason_val
+            and "Late" not in reason_val
+            and "첨부" not in reason_val
+        ):
+            tier = "1점"
+        elif s == 1.8 or s == 0.9:
+            tier = "0.9점"
+        elif s == 0.7:
+            tier = "0.7점"
+        elif s in (1.5, 1.0) or (
+            s == 0.5
+            and ("지각" in reason_val or "Late" in reason_val)
+            and "위반" not in reason_val
+            and "Violation" not in reason_val
+        ):
+            tier = "0.5점"
+        elif s in (1.3, 0.5, 0.2):
+            tier = "0.2점"
+        else:
+            tier = "0점"
+
+        stats[cls_key][tier] += 1
+        stats[cls_key]["total"] += 1
+
+    print("\n" + "=" * 65)
+    print("📊 [채점 결과 요약]")
+    print("-" * 65)
+    print("반 | 채점대상 | 1점  | 0.9점 | 0.7점 | 0.5점 | 0.2점 | 0점")
+    print("-" * 65)
+    for c in ["4", "1", "2"]:
+        st = stats[c]
+        t = st["target"]
+        s1 = st["1점"]
+        s09 = st["0.9점"]
+        s07 = st["0.7점"]
+        s05 = st["0.5점"]
+        s02 = st["0.2점"]
+        s0 = st["0점"]
+        print(
+            f"{c:<2} | {t:^8} | {s1:^4} | {s09:^5} | {s07:^5} | {s05:^5} | {s02:^5} | {s0:^3}"
+        )
+    print("=" * 65 + "\n")
+
+
 def sync_csv_to_sheet(csv_path):
     """이미 저장된 CSV 파일을 읽어 구글 시트에 업로드."""
     if not os.path.exists(csv_path):
@@ -170,6 +291,7 @@ def sync_csv_to_sheet(csv_path):
         )
 
     print(f"\n📄 CSV에서 {len(data_to_append)}건 로드 완료: {csv_path}\n")
+    print_grading_summary(rows)
     _upload_rows_to_sheet(data_to_append)
     print("\n✅ 시트 동기화 완료")
 
@@ -584,6 +706,7 @@ def extract_gmail_interactive(
             writer.writeheader()
             writer.writerows(new_rows)
         print(f"\n========= 총 {len(new_rows)}건 파싱 완료. {out_path} 저장 =========")
+        print_grading_summary(new_rows)
     else:
         print("\n========= 조건에 맞는 저장할 데이터가 없습니다. =========")
 
