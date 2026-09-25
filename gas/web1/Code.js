@@ -37,6 +37,8 @@ function onOpen() {
     .addItem('📋 resource 탭 동기화 (1행 보존, 2행부터 복사)', 'syncResourceTab')
     .addItem('🔄 시트 순서 지금 정렬 및 미허용 탭 삭제', 'manualEnforceStructure')
     .addItem('🔒 Q&A 1행 + D열 보호 설정 (학생 수정 차단)', 'protectHeaderAndColumnD')
+    .addSeparator()
+    .addItem('🔄 score 탭 정렬 (주차↓ 학번↑)', 'sortScoreTab')
     .addToUi();
 }
 
@@ -328,4 +330,48 @@ function protectHeaderAndColumnD() {
   }
 
   SpreadsheetApp.getUi().alert(results.join("\n") + "\n\n교수님만 수정 가능합니다.");
+}
+
+/**
+ * score 탭을 정렬합니다.
+ * 정렬 기준: 1차 주차(B열) 역순 → 2차 유형1(F열) → 3차 유형2(G열) → 4차 학번(C열) 오름차순
+ * No(A열)는 맨 위부터 N down to 1로 재부여합니다.
+ */
+function sortScoreTab() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("score");
+
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("score 탭을 찾을 수 없습니다.");
+    return;
+  }
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+
+  if (lastRow < 2) {
+    SpreadsheetApp.getUi().alert("정렬할 데이터가 없습니다.");
+    return;
+  }
+
+  const dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
+
+  dataRange.sort([
+    { column: 2, ascending: false },
+    { column: 6, ascending: true },
+    { column: 7, ascending: true },
+    { column: 3, ascending: true },
+  ]);
+
+  const total = lastRow - 1;
+  const noValues = [];
+  for (let i = 0; i < total; i++) {
+    noValues.push([total - i]);
+  }
+  sheet.getRange(2, 1, total, 1).setValues(noValues);
+
+  SpreadsheetApp.getUi().alert(
+    "✅ score 탭 정렬 완료\n" +
+    `${total}행 (주차 역순 → 학번 오름차순)\nNo 재부여 완료`
+  );
 }
