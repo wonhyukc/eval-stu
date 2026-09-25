@@ -118,7 +118,11 @@ def get_late_deadlines(deadline_dt):
 
 def _upload_rows_to_sheet(data_to_append):
     """트랙 번호 기반으로 py/web 시트에 자동 분기 업로드."""
-    from modules.sheet_updater import append_grades_to_sheet
+    from modules.sheet_updater import (
+        append_grades_to_sheet,
+        translate_reason_to_en,
+        translate_reason_to_ko,
+    )
 
     py_tracks = {"14712", "04", "468"}
     py_rows = [
@@ -128,12 +132,25 @@ def _upload_rows_to_sheet(data_to_append):
     ]
     web_rows = [r for r in data_to_append if r not in py_rows]
 
+    # 각 언어에 맞게 사유(Reason)를 한글/영어로 분기 변환
+    for r in py_rows:
+        reason_idx = 7 if len(r) > 9 else 5
+        if len(r) > reason_idx:
+            r[reason_idx] = translate_reason_to_ko(str(r[reason_idx]))
+
+    for r in web_rows:
+        reason_idx = 7 if len(r) > 9 else 5
+        if len(r) > reason_idx:
+            r[reason_idx] = translate_reason_to_en(str(r[reason_idx]))
+
     if py_rows:
-        print(f"  📦 [파이썬 4반] {len(py_rows)}건 → py 시트")
+        print(f"  📦 [파이썬 4반] {len(py_rows)}건 → py 시트 (한글 메시지 적용)")
         append_grades_to_sheet(py_rows, course="py")
 
     if web_rows:
-        print(f"\n  📦 [웹 1·2반] {len(web_rows)}건 → web 시트 (자동 분반)")
+        print(
+            f"\n  📦 [웹 1·2반] {len(web_rows)}건 → web 시트 (자동 분반, 영문 메시지 적용)"
+        )
         append_grades_to_sheet(web_rows, course="web")
 
 

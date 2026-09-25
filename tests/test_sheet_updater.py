@@ -165,3 +165,35 @@ def test_translate_reason_to_en():
         translate_reason_to_en("조건위반(첨부없음,제목양식오류)")
         == "Violation(No attachment,Title format error)"
     )
+
+
+def test_translate_reason_to_ko():
+    from modules.sheet_updater import translate_reason_to_ko
+
+    # 1. 영문 -> 한글 매핑 검증
+    assert (
+        translate_reason_to_ko("Met all conditions (+2)") == "정확한 양식/조건충족(+2)"
+    )
+    assert (
+        translate_reason_to_ko("On-time & Exact Format")
+        == "정상 제출 (기한내/정확한 양식)"
+    )
+    assert (
+        translate_reason_to_ko("Minor format issue (Brackets/Extra text)")
+        == "경미한 양식 오차 (괄호/불필요 기호)"
+    )
+    assert (
+        translate_reason_to_ko("Missing Student ID or 0.x in Subject")
+        == "제목 학번 또는 과제명 누락"
+    )
+    assert translate_reason_to_ko("No submission") == "미제출"
+
+    # 2. 복합 패턴 검증 (지각 및 위반)
+    assert (
+        translate_reason_to_ko("Late submission (Met all conditions (+2))")
+        == "지각 제출 (정확한 양식/조건충족(+2))"
+    )
+    assert (
+        translate_reason_to_ko("Violation(No attachment,Title format error)")
+        == "조건위반(첨부없음,제목양식오류)"
+    )

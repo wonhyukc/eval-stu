@@ -197,6 +197,61 @@ def translate_reason_to_en(reason: str) -> str:
     return raw
 
 
+REASON_EN_TO_KO_MAP = {
+    "Met all conditions (+2)": "정확한 양식/조건충족(+2)",
+    "On-time & Exact Format": "정상 제출 (기한내/정확한 양식)",
+    "Minor format issue (Brackets/Extra text)": "경미한 양식 오차 (괄호/불필요 기호)",
+    "Missing Student ID or 0.x in Subject": "제목 학번 또는 과제명 누락",
+    "Title format error": "제목양식오류",
+    "Late submission (Before next class)": "지각 제출 (다음 수업 시작 전)",
+    "Late submission": "지각 제출",
+    "Late & Format Issue (Missing ID)": "지각 + 제목 학번 누락",
+    "No submission": "미제출",
+    "Empty Body / Quoted Text Only": "본문 미작성(단순 회신)",
+    "Cannot identify student ID": "학번 식별 불가",
+    "Manual review required (Format mismatch)": "수동 확인 요망(양식불일치/타주차)",
+    "Manual review required": "수동 확인 요망",
+    "No attachment": "첨부없음",
+    "Attachment included": "첨부있음",
+    "Subject error (0.12)": "제목오류(0.12)",
+    "Subject error(0.12)": "제목오류(0.12)",
+}
+
+
+def translate_reason_to_ko(reason: str) -> str:
+    """파이썬(K트랙) 시트 언어 정책을 준수하기 위해 영문 사유를 한글로 변환."""
+    if not reason:
+        return ""
+
+    raw = str(reason).strip()
+    if raw in REASON_EN_TO_KO_MAP:
+        return REASON_EN_TO_KO_MAP[raw]
+
+    # "Late submission (...)" 패턴 처리
+    prefix_len = len("Late submission")
+    if raw.startswith("Late submission"):
+        inner = raw[prefix_len:].strip()
+        if inner.startswith("(") and inner.endswith(")"):
+            inner_ko = translate_reason_to_ko(inner[1:-1])
+            return f"지각 제출 ({inner_ko})"
+        return "지각 제출"
+
+    # "Violation(...)" 패턴 처리
+    if "Violation" in raw:
+        raw = raw.replace("Violation", "조건위반")
+        raw = raw.replace("No attachment", "첨부없음")
+        raw = raw.replace("Attachment included", "첨부있음")
+        raw = raw.replace("Title format error", "제목양식오류")
+        raw = raw.replace("Subject error (0.12)", "제목오류(0.12)")
+        raw = raw.replace("Subject error(0.12)", "제목오류(0.12)")
+        return raw
+
+    for en, ko in REASON_EN_TO_KO_MAP.items():
+        raw = raw.replace(en, ko)
+
+    return raw
+
+
 def sort_sheet_rows(rows_data, renumber_desc=True):
     """
     11열 성적 데이터를 4단계 표준 정렬 순서로 정렬합니다:
@@ -405,8 +460,10 @@ def append_grades_to_sheet(rows_data, course="py"):
         if len(row) > 10 and row[10]:
             clean_subject = str(row[10]).lstrip("'")
             row[10] = f"'{clean_subject}"
-        # E트랙(web1, web2) 시트인 경우 Reason(인덱스 7)을 100% 영어로 변환
-        if course in ["web", "web1", "web2"] and len(row) > 7:
+        # 분반별 언어 정책: 파이썬(K트랙)은 한글, 웹(E트랙)은 영어
+        if course == "py" and len(row) > 7:
+            row[7] = translate_reason_to_ko(str(row[7]))
+        elif course in ["web", "web1", "web2"] and len(row) > 7:
             row[7] = translate_reason_to_en(str(row[7]))
 
     range_name = f"{sheet_title}!A:K"  # A~K열 11열 데이터 기준으로 append
@@ -550,8 +607,10 @@ def upsert_grades_to_sheet(rows_data, course="py"):
             clean_subject = str(row[10]).lstrip("'")
             row[10] = f"'{clean_subject}"
 
-        # E트랙(web1, web2) 시트인 경우 Reason(인덱스 7)을 100% 영어로 변환
-        if course in ["web", "web1", "web2"] and len(row) > 7:
+        # 분반별 언어 정책: 파이썬(K트랙)은 한글, 웹(E트랙)은 영어
+        if course == "py" and len(row) > 7:
+            row[7] = translate_reason_to_ko(str(row[7]))
+        elif course in ["web", "web1", "web2"] and len(row) > 7:
             row[7] = translate_reason_to_en(str(row[7]))
 
         key = (clean_id, t1, clean_type2)
