@@ -108,8 +108,9 @@ def _upload_rows_to_sheet(data_to_append):
     if py_rows:
         print(f"  📦 [파이썬 4반] {len(py_rows)}건 → py 시트")
         append_grades_to_sheet(py_rows, course="py")
+
     if web_rows:
-        print(f"  📦 [웹 1·2반] {len(web_rows)}건 → web 시트 (자동 분반)")
+        print(f"\n  📦 [웹 1·2반] {len(web_rows)}건 → web 시트 (자동 분반)")
         append_grades_to_sheet(web_rows, course="web")
 
 
@@ -145,9 +146,9 @@ def sync_csv_to_sheet(csv_path):
             ]
         )
 
-    print(f"📄 CSV에서 {len(data_to_append)}건 로드 완료: {csv_path}")
+    print(f"\n📄 CSV에서 {len(data_to_append)}건 로드 완료: {csv_path}\n")
     _upload_rows_to_sheet(data_to_append)
-    print("✅ 시트 동기화 완료")
+    print("\n✅ 시트 동기화 완료")
 
 
 def extract_gmail_interactive(
