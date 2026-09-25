@@ -103,10 +103,12 @@ def sync_csv_to_sheet(csv_path):
 
     data_to_append = []
     for r in rows:
+        # CSV 헤더 호환: '추정하는학번'이 있으면 우선, 없으면 '학번' 사용
+        student_id = r.get("추정하는학번", r.get("학번", ""))
         data_to_append.append(
             [
                 "",
-                r.get("학번", ""),
+                student_id,
                 r.get("track", ""),
                 r.get("점수", ""),
                 r.get("유형", ""),

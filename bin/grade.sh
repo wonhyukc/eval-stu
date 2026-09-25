@@ -48,7 +48,17 @@ WEEK="${TASK#0.}"
 
 if [[ "$ACTION" == "sync" ]]; then
   # ── 2단계: CSV → 구글 시트 ──
-  CSV_FILE="${OUTPUT_DIR}/grades_output_${WEEK}_py.csv"
+  # CSV 파일 자동 탐색 (여러 경로 지원)
+  CSV_FILE=""
+  for candidate in \
+    "${ROOT_DIR}/output/mail$(printf '%02d' "$WEEK" 2>/dev/null || echo "$WEEK").csv" \
+    "${ROOT_DIR}/output/mail${WEEK}.csv" \
+    "${ROOT_DIR}/9output/grades_output_${WEEK}_py.csv"; do
+    if [[ -f "$candidate" ]]; then
+      CSV_FILE="$candidate"
+      break
+    fi
+  done
 
   echo ""
   echo "═══════════════════════════════════════════════"
@@ -56,8 +66,9 @@ if [[ "$ACTION" == "sync" ]]; then
   echo "═══════════════════════════════════════════════"
   echo ""
 
-  if [[ ! -f "$CSV_FILE" ]]; then
-    echo "❌ CSV 파일이 없습니다: ${CSV_FILE}"
+  if [[ -z "$CSV_FILE" ]]; then
+    echo "❌ CSV 파일을 찾을 수 없습니다."
+    echo "   검색 경로: output/mail${WEEK}.csv, 9output/grades_output_${WEEK}_py.csv"
     echo "   먼저 ./bin/grade.sh ${TASK} 로 크롤링하세요."
     exit 1
   fi
