@@ -562,16 +562,24 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         print(f"⚠️ 기존 데이터 조회 실패: {e}")
         existing_rows = []
 
-    # 기존 데이터 인덱싱: (student_id, type1, type2) -> row_number (idx + 2)
+    # 기존 데이터 인덱싱: (student_id_last3, type1, type2) -> row_number (idx + 2)
+    # ⚠️ 학번은 반드시 끝 3자리로 정규화하여 비교해야 함.
+    #    시트에는 '857 (3자리)로 저장되어 있고, 새 데이터는 2026300857 (10자리)로 들어오므로
+    #    정규화하지 않으면 다른 키로 인식되어 중복이 발생함 (이전 버그의 근본 원인).
+    def _normalize_sid(raw: str) -> str:
+        """학번 문자열을 끝 3자리로 정규화 (키 비교 전용)."""
+        clean = str(raw).replace("'", "").strip()
+        return clean[-3:] if len(clean) >= 3 else clean
+
     key_to_row_num = {}
     for idx, row in enumerate(existing_rows):
         if len(row) > 6:  # 11열 기준: ID=2, Type1=5, Type2=6
-            sid = str(row[2]).replace("'", "").strip()
+            sid = _normalize_sid(row[2])
             t1 = str(row[5]).strip()
             t2 = str(row[6]).replace("과제", "").replace("'", "").strip()
             key_to_row_num[(sid, t1, t2)] = idx + 2
         elif len(row) > 4:  # 구 9열 기준 호환: ID=1, Type=4
-            sid = str(row[1]).replace("'", "").strip()
+            sid = _normalize_sid(row[1])
             t1 = "hw"
             t2 = str(row[4]).replace("과제", "").replace("'", "").strip()
             key_to_row_num[(sid, t1, t2)] = idx + 2
@@ -590,6 +598,9 @@ def upsert_grades_to_sheet(rows_data, course="py"):
             row[2] = f"'{clean_id}"
         else:
             clean_id = ""
+
+        # 키 비교용 학번은 끝 3자리로 정규화
+        sid_key = _normalize_sid(clean_id)
 
         # Type1
         t1 = str(row[5]).strip() if len(row) > 5 else "hw"
@@ -613,7 +624,7 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         elif course in ["web", "web1", "web2"] and len(row) > 7:
             row[7] = translate_reason_to_en(str(row[7]))
 
-        key = (clean_id, t1, clean_type2)
+        key = (sid_key, t1, clean_type2)
 
         if key in key_to_row_num:
             # 기존 행 갱신 (No는 기존 행의 No 유지)
@@ -634,6 +645,8 @@ def upsert_grades_to_sheet(rows_data, course="py"):
             max_no += 1
             row[0] = max_no
             rows_to_append.append(row)
+            # ⚠️ 같은 배치 내에서도 중복 방지: 신규 추가 키를 즉시 등록
+            key_to_row_num[key] = -1  # sentinel (append이므로 row_num은 불확정)
 
     success = True
 
