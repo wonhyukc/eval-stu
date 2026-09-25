@@ -216,8 +216,8 @@ def sort_sheet_remote(course="py"):
         print(f"❌ 오류: gid={target_gid} 시트를 찾을 수 없음")
         return False
 
-    # 1) 시트에서 전체 데이터 읽기 (헤더 제외)
-    range_name = f"{sheet_title}!A:K"
+    # 1) 시트에서 전체 데이터 읽기 (A:L 12열, 이의제기 결과 컬럼 포함)
+    range_name = f"{sheet_title}!A:L"
     result = (
         service.spreadsheets()
         .values()
@@ -233,11 +233,26 @@ def sort_sheet_remote(course="py"):
     data_rows = all_rows[1:]
     print(f"📊 {sheet_title}: {len(data_rows)}행 읽기 완료")
 
-    # 2) 정렬
-    sorted_rows = sort_sheet_rows(data_rows, renumber_desc=True)
+    # 12열로 패딩 (짧은 행 보정)
+    for row in data_rows:
+        while len(row) < 12:
+            row.append("")
 
-    # 3) 주차를 숫자로, 학번을 끝3자리 텍스트로 정규화
-    for row in sorted_rows:
+    # 2) 주차(B열) 빈 셀 → 유형2(G열, 인덱스 6)에서 추출하여 채우기
+    for row in data_rows:
+        wk_val = str(row[1]).strip()
+        if not wk_val:
+            type2 = str(row[6]).replace("과제", "").replace("'", "").strip()
+            m = re.search(r"0\.(\d+)", type2)
+            if m:
+                row[1] = m.group(1)
+
+    # 3) 정렬 (11열 기준, 12열째는 보존)
+    extra_col = [row[11] for row in data_rows]
+    sorted_rows = sort_sheet_rows([row[:11] for row in data_rows], renumber_desc=True)
+
+    # 4) 주차를 숫자로, 학번을 끝3자리 텍스트로 정규화 + 12열 복원
+    for i, row in enumerate(sorted_rows):
         if len(row) > 1 and row[1]:
             try:
                 row[1] = int(str(row[1]).strip().replace("'", ""))
@@ -247,9 +262,13 @@ def sort_sheet_remote(course="py"):
             clean_id = str(row[2]).lstrip("'").strip()
             last3 = clean_id[-3:] if len(clean_id) >= 3 else clean_id
             row[2] = f"'{last3}"
+        row.append(extra_col[i] if i < len(extra_col) else "")
 
-    # 4) 시트에 덮어쓰기 (헤더 + 정렬된 데이터)
-    write_range = f"{sheet_title}!A1:K{len(sorted_rows) + 1}"
+    # 5) 시트에 덮어쓰기 (헤더 + 정렬된 데이터, A:L)
+    # 헤더도 12열로 패딩
+    while len(header) < 12:
+        header.append("")
+    write_range = f"{sheet_title}!A1:L{len(sorted_rows) + 1}"
     body = {"values": [header] + sorted_rows}
     service.spreadsheets().values().update(
         spreadsheetId=spreadsheet_id,
