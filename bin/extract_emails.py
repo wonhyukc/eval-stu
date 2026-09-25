@@ -58,16 +58,16 @@ def parse_students():
 
 
 def get_time_window(target_week=None):
-    """deadline.md에서 email deadline을 읽어 시간 윈도우를 반환."""
+    """deadline.csv에서 email deadline을 읽어 시간 윈도우를 반환."""
     now = datetime.now(KST)
     year = now.year
 
-    deadline_path = os.path.join(base_dir, "5input", "deadline.md")
+    deadline_path = os.path.join(base_dir, "5input", "deadline.csv")
     deadlines = {}
     if os.path.exists(deadline_path):
         with open(deadline_path, "r", encoding="utf-8") as f:
             for line in f:
-                parts = line.strip().split("\t")
+                parts = line.strip().split(",")
                 if len(parts) >= 3 and parts[0].isdigit() and parts[2]:
                     wk = int(parts[0])
                     try:

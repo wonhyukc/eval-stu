@@ -43,11 +43,11 @@ def parse_students():
 def load_deadlines():
     KST = timezone(timedelta(hours=9))
     deadlines = {}
-    dl_path = "input/deadline.md"
+    dl_path = "input/deadline.csv"
     if os.path.exists(dl_path):
         with open(dl_path, "r", encoding="utf-8") as f:
             for line in f:
-                parts = line.strip().split("\t")
+                parts = line.strip().split(",")
                 if len(parts) >= 2 and parts[0].isdigit():
                     week = int(parts[0])
                     date_str = parts[1].strip()

@@ -18,12 +18,12 @@ class TestScoreCalculator(unittest.TestCase):
         """
         현재 score_calculator.py를 실행했을 때 5건 이하만 점수를 받는지 검증하고 원인을 파악하기 위한 테스트입니다.
         """
-        # 1. 파일 경로 하드코딩 우회 (deadline.md -> input/deadline.md)
+        # 1. 파일 경로 하드코딩 우회 (deadline.csv -> input/deadline.csv)
         original_open = builtins.open
 
         def mock_open(file, *args, **kwargs):
-            if file == "deadline.md":
-                return original_open("input/deadline.md", *args, **kwargs)
+            if file == "deadline.csv":
+                return original_open("input/deadline.csv", *args, **kwargs)
             return original_open(file, *args, **kwargs)
 
         # apply mock

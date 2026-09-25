@@ -30,6 +30,8 @@ output/
 .bin/
 *.csv
 *.tsv
+# deadline.csv는 설정 파일이므로 예외 허용
+!5input/deadline.csv
 gwsServiceAccnt-mail.json
 .vscode/
 tmp/

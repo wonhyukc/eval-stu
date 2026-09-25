@@ -77,9 +77,9 @@ def main():
     KST = timezone(timedelta(hours=9))
     deadlines = {}
     try:
-        with open("input/deadline.md", "r", encoding="utf-8") as f:
+        with open("input/deadline.csv", "r", encoding="utf-8") as f:
             for line in f:
-                parts = line.strip().split("\t")
+                parts = line.strip().split(",")
                 if len(parts) >= 2 and parts[0].isdigit():
                     week = int(parts[0])
                     date_str = parts[1].strip()
@@ -93,7 +93,7 @@ def main():
                             pass
     except FileNotFoundError:
         print(
-            "Warning: input/deadline.md not found. Deadline checking will be skipped."
+            "Warning: input/deadline.csv not found. Deadline checking will be skipped."
         )
 
     # 3. Load emails
