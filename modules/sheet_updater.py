@@ -143,6 +143,60 @@ def route_web_rows(rows_data):
     return web1_rows, web2_rows
 
 
+REASON_KO_TO_EN_MAP = {
+    "정확한 양식/조건충족(+2)": "Met all conditions (+2)",
+    "정상 제출 (기한내/정확한 양식)": "On-time & Exact Format",
+    "정상 제출": "On-time & Exact Format",
+    "경미한 양식 오차 (괄호/불필요 기호)": "Minor format issue (Brackets/Extra text)",
+    "제목 학번 또는 과제명 누락": "Missing Student ID or 0.x in Subject",
+    "제목양식오류": "Title format error",
+    "지각 제출 (다음 수업 시작 전)": "Late submission (Before next class)",
+    "지각 제출": "Late submission",
+    "지각 + 제목 학번 누락": "Late & Format Issue (Missing ID)",
+    "미제출": "No submission",
+    "본문 미작성(단순 회신)": "Empty Body / Quoted Text Only",
+    "본문 미작성": "Empty Body / Quoted Text Only",
+    "학번 식별 불가": "Cannot identify student ID",
+    "수동 확인 요망(양식불일치/타주차)": "Manual review required (Format mismatch)",
+    "수동 확인 요망": "Manual review required",
+    "첨부없음": "No attachment",
+    "첨부있음": "Attachment included",
+}
+
+
+def translate_reason_to_en(reason: str) -> str:
+    """웹(E트랙) 시트 언어 정책을 준수하기 위해 한글 사유를 영문으로 변환."""
+    if not reason:
+        return ""
+
+    raw = str(reason).strip()
+    if raw in REASON_KO_TO_EN_MAP:
+        return REASON_KO_TO_EN_MAP[raw]
+
+    # "지각 제출 (...)" 패턴 처리
+    prefix_len = len("지각 제출")
+    if raw.startswith("지각 제출"):
+        inner = raw[prefix_len:].strip()
+        if inner.startswith("(") and inner.endswith(")"):
+            inner_en = translate_reason_to_en(inner[1:-1])
+            return f"Late submission ({inner_en})"
+        return "Late submission"
+
+    # "조건위반(...)" 패턴 처리
+    if "조건위반" in raw:
+        raw = raw.replace("조건위반", "Violation")
+        raw = raw.replace("첨부없음", "No attachment")
+        raw = raw.replace("첨부있음", "Attachment included")
+        raw = raw.replace("제목양식오류", "Title format error")
+        raw = raw.replace("제목오류(0.12)", "Subject error (0.12)")
+        return raw
+
+    for ko, en in REASON_KO_TO_EN_MAP.items():
+        raw = raw.replace(ko, en)
+
+    return raw
+
+
 def sort_sheet_rows(rows_data, renumber_desc=True):
     """
     11열 성적 데이터를 4단계 표준 정렬 순서로 정렬합니다:
@@ -351,6 +405,9 @@ def append_grades_to_sheet(rows_data, course="py"):
         if len(row) > 10 and row[10]:
             clean_subject = str(row[10]).lstrip("'")
             row[10] = f"'{clean_subject}"
+        # E트랙(web1, web2) 시트인 경우 Reason(인덱스 7)을 100% 영어로 변환
+        if course in ["web", "web1", "web2"] and len(row) > 7:
+            row[7] = translate_reason_to_en(str(row[7]))
 
     range_name = f"{sheet_title}!A:K"  # A~K열 11열 데이터 기준으로 append
     body = {"values": normalized_rows}
@@ -492,6 +549,10 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         if len(row) > 10 and row[10]:
             clean_subject = str(row[10]).lstrip("'")
             row[10] = f"'{clean_subject}"
+
+        # E트랙(web1, web2) 시트인 경우 Reason(인덱스 7)을 100% 영어로 변환
+        if course in ["web", "web1", "web2"] and len(row) > 7:
+            row[7] = translate_reason_to_en(str(row[7]))
 
         key = (clean_id, t1, clean_type2)
 

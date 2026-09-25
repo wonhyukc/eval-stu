@@ -69,6 +69,9 @@ def save_settings(settings):
 def extract_grades(
     course="py", query=None, require_attachment=False, lang="ko", local_csv=None
 ):
+    if course in ["web", "web1", "web2"] and lang == "ko":
+        lang = "en"
+
     settings = load_settings()
 
     course_config = settings.get("courses", {}).get(course)
@@ -368,19 +371,39 @@ def extract_grades(
                     if is_exact_title:
                         score = round(base_score, 1)
                         if not violations:
-                            reason = "정확한 양식/조건충족(+2)"
+                            reason = (
+                                "Met all conditions (+2)"
+                                if lang == "en"
+                                else "정확한 양식/조건충족(+2)"
+                            )
                         else:
-                            reason = f"조건위반({','.join(violations)})"
+                            reason = (
+                                f"Violation({','.join(violations)})"
+                                if lang == "en"
+                                else f"조건위반({','.join(violations)})"
+                            )
                     elif "0.12" in clean_sub:
                         base_score -= 0.3
-                        violations.append("제목오류(0.12)")
+                        violations.append(
+                            "Subject error(0.12)" if lang == "en" else "제목오류(0.12)"
+                        )
                         score = round(base_score, 1)
-                        reason = f"조건위반({','.join(violations)})"
+                        reason = (
+                            f"Violation({','.join(violations)})"
+                            if lang == "en"
+                            else f"조건위반({','.join(violations)})"
+                        )
                     else:
                         base_score -= 0.2
-                        violations.append("제목양식오류")
+                        violations.append(
+                            "Title format error" if lang == "en" else "제목양식오류"
+                        )
                         score = round(base_score, 1)
-                        reason = f"조건위반({','.join(violations)})"
+                        reason = (
+                            f"Violation({','.join(violations)})"
+                            if lang == "en"
+                            else f"조건위반({','.join(violations)})"
+                        )
                 else:
                     if not is_exact_title:
                         base_score -= 0.2

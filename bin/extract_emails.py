@@ -93,6 +93,29 @@ def get_time_window(target_week=None):
     return now - timedelta(days=7), now
 
 
+def get_late_deadlines(deadline_dt):
+    """트랙별 지각 마감 시간 반환 (다음 월요일 수업 시작 시각).
+
+    deadline_dt 이후 ~ 반환값 이전 = 지각(0.5점)
+    반환값 이후 = 불인정(0.0점)
+    """
+    # deadline_dt의 다음 월요일 찾기
+    days_until_monday = (7 - deadline_dt.weekday()) % 7
+    if days_until_monday == 0:
+        days_until_monday = 7
+    next_monday = (deadline_dt + timedelta(days=days_until_monday)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return {
+        "14712": next_monday.replace(hour=9, minute=0),  # 4반 py: 월 09:00
+        "468": next_monday.replace(hour=9, minute=0),  # 4반 py (alt)
+        "15144": next_monday.replace(hour=13, minute=0),  # 2반 web2: 월 13:00
+        "762": next_monday.replace(hour=13, minute=0),  # 2반 web2 (alt)
+        "15143": next_monday.replace(hour=16, minute=0),  # 1반 web1: 월 16:00
+        "761": next_monday.replace(hour=16, minute=0),  # 1반 web1 (alt)
+    }
+
+
 def _upload_rows_to_sheet(data_to_append):
     """트랙 번호 기반으로 py/web 시트에 자동 분기 업로드."""
     from modules.sheet_updater import append_grades_to_sheet
@@ -162,8 +185,13 @@ def extract_gmail_interactive(
     name_to_id, id_to_track, id_to_names = parse_students()
 
     start_dt, deadline_dt = get_time_window(target_week)
+    late_deadlines = get_late_deadlines(deadline_dt)
+    # 가장 늦은 지각 마감 (1반 월 16:00)
+    max_late_dt = max(late_deadlines.values()) if late_deadlines else deadline_dt
     print(
-        f"Time Window: {start_dt.strftime('%Y-%m-%d %H:%M')} ~ {deadline_dt.strftime('%Y-%m-%d %H:%M')}"
+        f"Time Window: {start_dt.strftime('%Y-%m-%d %H:%M')} ~ "
+        f"{deadline_dt.strftime('%Y-%m-%d %H:%M')} "
+        f"(지각 마감: {max_late_dt.strftime('%Y-%m-%d %H:%M')})"
     )
 
     # Build regex based on target_week
@@ -210,9 +238,9 @@ def extract_gmail_interactive(
 
         page.wait_for_timeout(2000)
 
-        # Build Gmail query string safely covering the window
+        # Build Gmail query string safely covering the window (지각 마감까지 확장)
         after_str = (start_dt - timedelta(days=1)).strftime("%Y/%m/%d")
-        before_str = (deadline_dt + timedelta(days=1)).strftime("%Y/%m/%d")
+        before_str = (max_late_dt + timedelta(days=1)).strftime("%Y/%m/%d")
 
         if target_week:
             if target_week == "a":
@@ -299,10 +327,10 @@ def extract_gmail_interactive(
                 except Exception:
                     pass
 
-                # Strict Deadline check: Exclude any emails after Monday 09:00
+                # 지각 판정: deadline 이후 ~ 트랙별 지각 마감 전
+                is_late = False
                 if email_dt and email_dt > deadline_dt:
-                    print(f" -> 지각 제외: {date_str} ({subject})")
-                    continue
+                    is_late = True  # 일단 지각 표시 (트랙 확인 후 초과 여부 판정)
 
                 # Exclude emails before start_dt (Just in case the query fetched older ones)
                 if email_dt and email_dt < start_dt:
@@ -361,6 +389,13 @@ def extract_gmail_interactive(
                 if est_id:
                     continue
 
+            # 지각 초과 판정: 트랙별 지각 마감 이후이면 불인정
+            if is_late and email_dt and track_num:
+                track_late_dt = late_deadlines.get(track_num, max_late_dt)
+                if email_dt >= track_late_dt:
+                    print(f" -> 지각 초과 제외: {est_id} ({sender}) | {date_str}")
+                    continue
+
             score = 0
             reason = "수동 확인 요망(양식불일치/타주차)"
             task_type = "기타"
@@ -385,15 +420,24 @@ def extract_gmail_interactive(
                         base_score = 2.0
                         violations = []
 
+                        py_tracks = {"14712", "04", "468"}
+                        is_web = track_num not in py_tracks and not str(
+                            track_num
+                        ).startswith("4")
+
                         # Attachment check
                         if require_attachment:
                             if not has_att:
                                 base_score -= 1.0
-                                violations.append("첨부없음")
+                                violations.append(
+                                    "No attachment" if is_web else "첨부없음"
+                                )
                         else:
                             if has_att:
                                 base_score -= 1.0
-                                violations.append("첨부있음")
+                                violations.append(
+                                    "Attachment included" if is_web else "첨부있음"
+                                )
 
                         # Strict exact title check (no brackets, exactly (과제|assignment)0.X학번)
                         week_val = target_week if target_week else found_week
@@ -418,38 +462,77 @@ def extract_gmail_interactive(
                             if is_exact_title:
                                 score = round(base_score, 1)
                                 if not violations:
-                                    reason = "정확한 양식/조건충족(+2)"
+                                    reason = (
+                                        "Met all conditions (+2)"
+                                        if is_web
+                                        else "정확한 양식/조건충족(+2)"
+                                    )
                                 else:
                                     reason = (
-                                        f"조건위반({','.join(violations)}) ({score})"
+                                        f"Violation({','.join(violations)}) ({score})"
+                                        if is_web
+                                        else f"조건위반({','.join(violations)}) ({score})"
                                     )
                             elif "0.12" in clean_sub:
                                 base_score -= 0.3
-                                violations.append("제목오류(0.12)")
+                                violations.append(
+                                    "Subject error(0.12)"
+                                    if is_web
+                                    else "제목오류(0.12)"
+                                )
                                 score = round(base_score, 1)
-                                reason = f"조건위반({','.join(violations)}) ({score})"
+                                reason = (
+                                    f"Violation({','.join(violations)}) ({score})"
+                                    if is_web
+                                    else f"조건위반({','.join(violations)}) ({score})"
+                                )
                             else:
                                 base_score -= 0.2
-                                violations.append("제목양식오류")
+                                violations.append(
+                                    "Title format error" if is_web else "제목양식오류"
+                                )
                                 score = round(base_score, 1)
-                                reason = f"조건위반({','.join(violations)}) ({score})"
+                                reason = (
+                                    f"Violation({','.join(violations)}) ({score})"
+                                    if is_web
+                                    else f"조건위반({','.join(violations)}) ({score})"
+                                )
                         else:
                             if not is_exact_title:
                                 base_score -= 0.2
-                                violations.append("제목양식오류")
+                                violations.append(
+                                    "Title format error" if is_web else "제목양식오류"
+                                )
 
                             if not violations:
                                 score = 2
-                                reason = "정확한 양식/조건충족(+2)"
+                                reason = (
+                                    "Met all conditions (+2)"
+                                    if is_web
+                                    else "정확한 양식/조건충족(+2)"
+                                )
                             else:
                                 score = round(base_score, 1)
-                                reason = f"조건위반({','.join(violations)}) ({score})"
+                                reason = (
+                                    f"Violation({','.join(violations)}) ({score})"
+                                    if is_web
+                                    else f"조건위반({','.join(violations)}) ({score})"
+                                )
                     else:
                         print(f" -> 타주차 과제 무시: {est_id} ({sender}) | {subject}")
                         continue
                 else:
                     print(f" -> 과제 아님 무시: {est_id} ({sender}) | {subject}")
                     continue
+            # 지각 감점 적용 (SSOT: 0.5점 감점)
+            if is_late and score > 0:
+                score = max(round(score - 0.5, 1), 0)
+                if is_web:
+                    reason = (
+                        f"Late submission ({reason})" if reason else "Late submission"
+                    )
+                else:
+                    reason = f"지각 제출 ({reason})" if reason else "지각 제출"
 
             row_data = {
                 "학번": est_id,
@@ -463,7 +546,11 @@ def extract_gmail_interactive(
                 "메일제목": subject,
             }
             new_rows.append(row_data)
-            print(f" -> 채점 완료: {est_id} ({sender}) | 점수: {score} | {reason}")
+            late_mark = " [지각]" if is_late else ""
+            print(
+                f" -> 채점 완료: {est_id} ({sender}) | "
+                f"점수: {score}{late_mark} | {reason}"
+            )
 
         context.close()
 
@@ -709,11 +796,18 @@ def run_all_grading_interactive():
                         continue
                     seen_ids.add(est_id)
 
+                py_tracks = {"14712", "04", "468"}
+                is_web = track_num not in py_tracks and not str(track_num).startswith(
+                    "4"
+                )
+
                 score = 0
                 reason = ""
                 if est_id == "학번없음":
                     score = 0
-                    reason = "학번 식별 불가"
+                    reason = (
+                        "Cannot identify student ID" if is_web else "학번 식별 불가"
+                    )
                 else:
                     base_score = 2.0
                     violations = []
@@ -721,11 +815,13 @@ def run_all_grading_interactive():
                     if config["require_attachment"]:
                         if not has_att:
                             base_score -= 1.0
-                            violations.append("첨부없음")
+                            violations.append("No attachment" if is_web else "첨부없음")
                     else:
                         if has_att:
                             base_score -= 1.0
-                            violations.append("첨부있음")
+                            violations.append(
+                                "Attachment included" if is_web else "첨부있음"
+                            )
 
                     is_exact_title = False
                     for q in config["queries"]:
@@ -737,14 +833,24 @@ def run_all_grading_interactive():
 
                     if not is_exact_title:
                         base_score -= 0.2
-                        violations.append("제목양식오류")
+                        violations.append(
+                            "Title format error" if is_web else "제목양식오류"
+                        )
 
                     if not violations:
                         score = 2.0
-                        reason = "정확한 양식/조건충족(+2)"
+                        reason = (
+                            "Met all conditions (+2)"
+                            if is_web
+                            else "정확한 양식/조건충족(+2)"
+                        )
                     else:
                         score = round(base_score, 1)
-                        reason = f"조건위반({','.join(violations)})"
+                        reason = (
+                            f"Violation({','.join(violations)})"
+                            if is_web
+                            else f"조건위반({','.join(violations)})"
+                        )
 
                 formatted_date = (
                     f"{email_dt.month}/{email_dt.day} {email_dt.strftime('%H:%M')}"

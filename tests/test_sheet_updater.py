@@ -131,3 +131,37 @@ def test_sort_sheet_rows_4level():
     assert sorted_res[1][0] == "3"
     assert sorted_res[2][0] == "2"
     assert sorted_res[3][0] == "1"
+
+
+def test_translate_reason_to_en():
+    from modules.sheet_updater import translate_reason_to_en
+
+    # 1. 사용자가 명시한 문구 검증
+    assert (
+        translate_reason_to_en("정확한 양식/조건충족(+2)") == "Met all conditions (+2)"
+    )
+
+    # 2. 기타 표준 사유 매핑 검증
+    assert (
+        translate_reason_to_en("정상 제출 (기한내/정확한 양식)")
+        == "On-time & Exact Format"
+    )
+    assert (
+        translate_reason_to_en("경미한 양식 오차 (괄호/불필요 기호)")
+        == "Minor format issue (Brackets/Extra text)"
+    )
+    assert (
+        translate_reason_to_en("제목 학번 또는 과제명 누락")
+        == "Missing Student ID or 0.x in Subject"
+    )
+    assert translate_reason_to_en("미제출") == "No submission"
+
+    # 3. 복합 패턴 검증 (지각 및 위반)
+    assert (
+        translate_reason_to_en("지각 제출 (정확한 양식/조건충족(+2))")
+        == "Late submission (Met all conditions (+2))"
+    )
+    assert (
+        translate_reason_to_en("조건위반(첨부없음,제목양식오류)")
+        == "Violation(No attachment,Title format error)"
+    )
