@@ -212,3 +212,46 @@ Gmail 수신함에서 학생들의 과제 제출 이메일을 크롤링·파싱�
    - 미답장 건에 한하여 해당 트랙 언어(E트랙: 영문, K트랙: 한글) 템플릿으로 스레드 답장 발송
    - 발송 완료 후 채점 전용 크롬 프로세스만 안전하게 종료
 
+
+---
+
+## 🙋 8. 발표 자원자 탐지 및 Agenda 시트 기록 정책
+
+과제 이메일 본문에서 **다음 수업 발표 자원 의사를 밝힌 학생**을 자동 탐지하고, 해당 분반 스프레드시트의 `agenda` 탭에 기록합니다.
+
+### 탐지 키워드 (다국어)
+
+| 언어 | 탐지 패턴 예시 |
+|---|---|
+| **영어** | `would like to present`, `volunteer`, `share in class`, `sign up to present` |
+| **한국어** | `발표 하고 싶`, `지원합니다`, `자원합니다` |
+| **베트남어** | `trình bày`, `chia sẻ`, `tôi muốn`, `đăng ký` |
+
+### Agenda 탭 스키마 (9열, E트랙 영문 / K트랙 한글)
+
+| 열 | 헤더 | 설명 | 예시 |
+|:---:|---|---|---|
+| A | `No` | 일련번호 | `6` |
+| B | `wk` | 자원한 과제 주차 | `4` |
+| C | `ID` | 학번 (문자열 강제 `'`) | `'2026300885` |
+| D | `Track` | 강좌번호 | `15143` |
+| E | `Name` | 학생 이름 | `Sudeep chaudhary` |
+| F | `Topic` | 발표 주제 | `Useful tips on university life and study methods` |
+| G | `Status` | 상태 | `Volunteered` / `Confirmed` / `Presented` |
+| H | `Date` | 자원 감지 날짜 | `9/25` |
+| I | `Notes` | 비고 | `Volunteered in Assignment 0.4 email` |
+
+### 분반별 Agenda 탭 위치
+
+| 분반 | 스프레드시트 |
+|---|---|
+| **WEB1 (1반)** | [web1 시트 agenda 탭](https://docs.google.com/spreadsheets/d/1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk/edit) |
+| **WEB2 (2반)** | [web2 시트 agenda 탭](https://docs.google.com/spreadsheets/d/1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo/edit) |
+| **PY4 (4반)** | [04반 성적부 agenda 탭](https://docs.google.com/spreadsheets/d/1Ni4ZaeIJJdNNvysx5-LFpOF6sh4Emp-cK92DnTUsAyQ/edit) |
+
+### 운영 원칙
+
+1. **탐지 스크립트**: `tmp/scan_volunteers_04.py` 패턴을 주차별로 재사용 (`SEARCH_AFTER` 날짜만 변경)
+2. **중복 방지**: `(ID, wk)` 복합 키로 중복 삽입 방지
+3. **Status 생명주기**: `Volunteered` → `Confirmed` → `Presented`
+4. **언어 정책**: agenda 탭은 **E트랙(1반/2반) 100% 영문**, **K트랙(4반) 100% 한글**
