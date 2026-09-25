@@ -720,7 +720,22 @@ def run_all_grading_interactive():
                 print(f"구글 시트에 '{config['week_name']}' 과제 데이터 추가 시도...")
                 from modules.sheet_updater import append_grades_to_sheet
 
-                append_grades_to_sheet(data_to_append, course="py")
+                # 트랙 번호 기반으로 py / web 시트 자동 분기
+                py_tracks = {"14712", "04", "468"}
+                py_rows = [
+                    r
+                    for r in data_to_append
+                    if str(r[2]).strip("'") in py_tracks
+                    or str(r[2]).strip("'").startswith("4")
+                ]
+                web_rows = [r for r in data_to_append if r not in py_rows]
+
+                if py_rows:
+                    print(f"  📦 [파이썬 4반] {len(py_rows)}건 → py 시트")
+                    append_grades_to_sheet(py_rows, course="py")
+                if web_rows:
+                    print(f"  📦 [웹 1·2반] {len(web_rows)}건 → web 시트 (자동 분반)")
+                    append_grades_to_sheet(web_rows, course="web")
             else:
                 print(f"⚠️ 과제 {task_key}에 대해 저장할 데이터가 없습니다.")
         context.close()
