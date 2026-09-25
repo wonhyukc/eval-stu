@@ -444,13 +444,11 @@ def extract_gmail_interactive(
                                 score = round(base_score, 1)
                                 reason = f"조건위반({','.join(violations)}) ({score})"
                     else:
-                        score = 0
-                        reason = "타주차 과제(수동확인)"
-                        task_type = "기타"
+                        print(f" -> 타주차 과제 무시: {est_id} ({sender}) | {subject}")
+                        continue
                 else:
-                    score = 0
-                    reason = "과제 아님"
-                    task_type = "기타"
+                    print(f" -> 과제 아님 무시: {est_id} ({sender}) | {subject}")
+                    continue
 
             row_data = {
                 "학번": est_id,
@@ -464,7 +462,7 @@ def extract_gmail_interactive(
                 "메일제목": subject,
             }
             new_rows.append(row_data)
-            print(f" -> 성공적 파싱: {est_id} ({sender}) | 점수: {score} | {reason}")
+            print(f" -> 채점 완료: {est_id} ({sender}) | 점수: {score} | {reason}")
 
         context.close()
 
