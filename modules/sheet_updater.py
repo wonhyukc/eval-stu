@@ -241,10 +241,17 @@ def append_grades_to_sheet(rows_data, course="py"):
 
     for i, row in enumerate(normalized_rows):
         row[0] = max_no + i + 1
-        # '학번(ID)' 컬럼(인덱스 2)에 대해, 지수 표기 방지를 위해 문자열 강제 포맷팅(') 적용
+        # '주차(wk)' 컬럼(인덱스 1)에 대해, 항상 숫자(int)로 저장하여 정렬 일관성 보장
+        if len(row) > 1 and row[1]:
+            try:
+                row[1] = int(str(row[1]).strip().replace("'", ""))
+            except ValueError:
+                pass
+        # '학번(ID)' 컬럼(인덱스 2)에 대해, 끝 3자리만 추출 + 문자열 강제 포맷팅(') 적용
         if len(row) > 2 and row[2]:
-            clean_id = str(row[2]).lstrip("'")
-            row[2] = f"'{clean_id}"
+            clean_id = str(row[2]).lstrip("'").strip()
+            last3 = clean_id[-3:] if len(clean_id) >= 3 else clean_id
+            row[2] = f"'{last3}"
         # 'Type2' 컬럼(인덱스 6)에 대해, 구글 시트가 숫자로 자동 변환하지 못하도록 문자열 강제 포맷팅(') 적용
         if len(row) > 6 and row[6]:
             clean_type2 = str(row[6]).replace("과제", "").replace("'", "").strip()
