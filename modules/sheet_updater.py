@@ -231,6 +231,53 @@ def convert_score_to_1scale(score_str: str) -> str:
     return str(converted)
 
 
+def convert_lab_score_to_3scale(raw_score: Any, max_score: float | int = 10.0) -> str:
+    """실습(Lab) 과제 점수를 3.0점 만점 스케일로 환산.
+
+    루브릭 원점수(총점 9점, 10점, 11점, 13점 등)를 SSOT 기준인 3.0점 만점으로 정규화합니다.
+    계산식: round((raw_score / max_score) * 3.0, 2)
+    만약 이미 3.0 이하 스케일로 입력된 경우(score <= 3.0 and max_score <= 3.0) 그대로 반환.
+    '획득/만점'(예: '9/10') 형식의 문자열도 지원.
+    """
+    if raw_score is None:
+        return "0.0"
+
+    score_text = str(raw_score).strip()
+
+    # "9/10" 형태의 분수형 문자열 파싱 지원
+    if "/" in score_text:
+        parts = score_text.split("/")
+        try:
+            val = float(parts[0].strip())
+            denom = float(parts[1].strip())
+            if denom > 0:
+                converted = round(min(max(val / denom, 0.0), 1.0) * 3.0, 2)
+                return str(converted)
+        except (ValueError, IndexError):
+            pass
+
+    try:
+        score = float(score_text)
+    except (ValueError, TypeError):
+        return score_text
+
+    try:
+        denom = float(max_score)
+        if denom <= 0:
+            denom = 10.0
+    except (ValueError, TypeError):
+        denom = 10.0
+
+    # 이미 3.0 스케일(3.0점 만점) 이하로 기록된 경우 (denom <= 3.0)
+    if denom <= 3.0 and score <= 3.0:
+        return str(round(score, 2))
+
+    # denom 기준으로 3.0점 비례 환산
+    ratio = min(max(score / denom, 0.0), 1.0)
+    converted = round(ratio * 3.0, 2)
+    return str(converted)
+
+
 def normalize_reason_to_ssot(reason: str) -> str:
     """2점 스케일 사유를 SSOT 표준 사유로 정규화.
 
@@ -601,9 +648,15 @@ def append_grades_to_sheet(rows_data, course="py"):
         if len(row) > 10 and row[10]:
             clean_subject = str(row[10]).lstrip("'")
             row[10] = f"'{clean_subject}"
-        # 점수 스케일 환산: 2점 만점 → 1.0점 만점 (SSOT 정책 준수)
+        # 점수 스케일 환산:
+        # - 실습 과제(lab): 3.0점 만점 스케일 적용 (SSOT 정책 준수)
+        # - 이메일 과제(hw) 및 기타: 1.0점 만점 스케일 적용 (SSOT 정책 준수)
         if len(row) > 4 and row[4]:
-            row[4] = convert_score_to_1scale(str(row[4]))
+            t1_val = str(row[5]).strip().lower() if len(row) > 5 and row[5] else ""
+            if t1_val in ("lab", "실습"):
+                row[4] = convert_lab_score_to_3scale(str(row[4]))
+            else:
+                row[4] = convert_score_to_1scale(str(row[4]))
         # 사유 SSOT 정규화: 2점 스케일 사유 → 표준 사유 (언어 변환 전에 적용)
         if len(row) > 7 and row[7]:
             row[7] = normalize_reason_to_ssot(str(row[7]))
@@ -777,9 +830,15 @@ def upsert_grades_to_sheet(rows_data, course="py"):
             clean_subject = str(row[10]).lstrip("'")
             row[10] = f"'{clean_subject}"
 
-        # 점수 스케일 환산: 2점 만점 → 1.0점 만점 (SSOT 정책 준수)
+        # 점수 스케일 환산:
+        # - 실습 과제(lab): 3.0점 만점 스케일 적용 (SSOT 정책 준수)
+        # - 이메일 과제(hw) 및 기타: 1.0점 만점 스케일 적용 (SSOT 정책 준수)
         if len(row) > 4 and row[4]:
-            row[4] = convert_score_to_1scale(str(row[4]))
+            t1_val = str(row[5]).strip().lower() if len(row) > 5 and row[5] else ""
+            if t1_val in ("lab", "실습"):
+                row[4] = convert_lab_score_to_3scale(str(row[4]))
+            else:
+                row[4] = convert_score_to_1scale(str(row[4]))
         # 사유 SSOT 정규화: 2점 스케일 사유 → 표준 사유 (언어 변환 전에 적용)
         if len(row) > 7 and row[7]:
             row[7] = normalize_reason_to_ssot(str(row[7]))

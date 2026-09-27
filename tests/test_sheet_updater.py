@@ -269,3 +269,30 @@ def test_normalize_track():
     assert normalize_track("468") == "4"
     assert normalize_track("python") == "4"
     assert normalize_track("파이썬") == "4"
+
+
+def test_convert_lab_score_to_3scale():
+    from modules.sheet_updater import convert_lab_score_to_3scale
+
+    # 10점 만점 기준
+    assert convert_lab_score_to_3scale(10, max_score=10) == "3.0"
+    assert convert_lab_score_to_3scale(5, max_score=10) == "1.5"
+    assert convert_lab_score_to_3scale(0, max_score=10) == "0.0"
+
+    # 9점 만점 기준 (3주차 실습 L3)
+    assert convert_lab_score_to_3scale(9, max_score=9) == "3.0"
+    assert convert_lab_score_to_3scale(6, max_score=9) == "2.0"
+
+    # 11점 만점 기준 (5/7주차 실습)
+    assert convert_lab_score_to_3scale(11, max_score=11) == "3.0"
+
+    # 13점 만점 기준 (6주차 실습)
+    assert convert_lab_score_to_3scale(13, max_score=13) == "3.0"
+
+    # 문자열 분수 지원 ("9/10", "10/10")
+    assert convert_lab_score_to_3scale("9/10") == "2.7"
+    assert convert_lab_score_to_3scale("10/10") == "3.0"
+
+    # 이미 3.0 스케일인 경우 (denom <= 3.0)
+    assert convert_lab_score_to_3scale("3.0", max_score=3.0) == "3.0"
+    assert convert_lab_score_to_3scale("2.5", max_score=3.0) == "2.5"
