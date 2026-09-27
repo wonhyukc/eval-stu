@@ -14,6 +14,8 @@ base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if base_dir not in sys.path:
     sys.path.append(base_dir)
 
+from modules.sheet_updater import normalize_track
+
 KST = timezone(timedelta(hours=9))
 
 
@@ -36,7 +38,7 @@ def parse_students():
                         continue
                     cols = [c.strip() for c in line.split("|")]
                     if len(cols) > 8:
-                        track = cols[1]
+                        track = normalize_track(cols[1])
                         student_id = cols[3]
                         eng_name = cols[4]
                         kor_name = cols[8]
@@ -58,7 +60,10 @@ def parse_students():
 
 
 def get_time_window(target_week=None):
-    """deadline.csv에서 email deadline을 읽어 시간 윈도우를 반환."""
+    """deadline.csv에서 email deadline을 읽어 (시작시각, 공식마감, 유예마감)을 반환.
+
+    유예마감: 공식 마감 + 15분 (금요일 00:15:00 KST)
+    """
     now = datetime.now(KST)
     year = now.year
 
@@ -78,7 +83,7 @@ def get_time_window(target_week=None):
                     except ValueError:
                         pass
 
-    if target_week and target_week.isdigit():
+    if target_week and str(target_week).isdigit():
         wk = int(target_week)
         if wk in deadlines:
             deadline = deadlines[wk]
@@ -87,19 +92,19 @@ def get_time_window(target_week=None):
             start_time = (
                 prev_deadline if prev_deadline else deadline - timedelta(days=7)
             )
-            return start_time, deadline
+            grace_deadline = deadline + timedelta(minutes=15)
+            return start_time, deadline, grace_deadline
 
     # 폴백: 현재 시각 기준 7일 전
-    return now - timedelta(days=7), now
+    return now - timedelta(days=7), now, now + timedelta(minutes=15)
 
 
 def get_late_deadlines(deadline_dt):
     """트랙별 지각 마감 시간 반환 (다음 월요일 수업 시작 시각).
 
-    deadline_dt 이후 ~ 반환값 이전 = 지각(0.5점)
+    grace_deadline 이후 ~ 반환값 이전 = 지각(0.5점)
     반환값 이후 = 불인정(0.0점)
     """
-    # deadline_dt의 다음 월요일 찾기
     days_until_monday = (7 - deadline_dt.weekday()) % 7
     if days_until_monday == 0:
         days_until_monday = 7
@@ -107,29 +112,28 @@ def get_late_deadlines(deadline_dt):
         hour=0, minute=0, second=0, microsecond=0
     )
     return {
-        "14712": next_monday.replace(hour=9, minute=0),  # 4반 py: 월 09:00
+        "4": next_monday.replace(hour=9, minute=0),  # 4반 py: 월 09:00
+        "14712": next_monday.replace(hour=9, minute=0),  # 4반 py (alt)
         "468": next_monday.replace(hour=9, minute=0),  # 4반 py (alt)
-        "15144": next_monday.replace(hour=13, minute=0),  # 2반 web2: 월 13:00
+        "2": next_monday.replace(hour=13, minute=0),  # 2반 web2: 월 13:00
+        "15144": next_monday.replace(hour=13, minute=0),  # 2반 web2 (alt)
         "762": next_monday.replace(hour=13, minute=0),  # 2반 web2 (alt)
-        "15143": next_monday.replace(hour=16, minute=0),  # 1반 web1: 월 16:00
+        "1": next_monday.replace(hour=16, minute=0),  # 1반 web1: 월 16:00
+        "15143": next_monday.replace(hour=16, minute=0),  # 1반 web1 (alt)
         "761": next_monday.replace(hour=16, minute=0),  # 1반 web1 (alt)
     }
 
 
 def _upload_rows_to_sheet(data_to_append):
-    """트랙 번호 기반으로 py/web 시트에 자동 분기 업로드."""
+    """트랙 번호('1', '2', '4') 기반으로 py/web 시트에 멱등(Upsert) 분기 업로드."""
     from modules.sheet_updater import (
-        append_grades_to_sheet,
+        upsert_grades_to_sheet,
+        normalize_track,
         translate_reason_to_en,
         translate_reason_to_ko,
     )
 
-    py_tracks = {"14712", "04", "468"}
-    py_rows = [
-        r
-        for r in data_to_append
-        if str(r[2]).strip("'") in py_tracks or str(r[2]).strip("'").startswith("4")
-    ]
+    py_rows = [r for r in data_to_append if normalize_track(r[2]) == "4"]
     web_rows = [r for r in data_to_append if r not in py_rows]
 
     # 각 언어에 맞게 사유(Reason)를 한글/영어로 분기 변환
@@ -144,14 +148,14 @@ def _upload_rows_to_sheet(data_to_append):
             r[reason_idx] = translate_reason_to_en(str(r[reason_idx]))
 
     if py_rows:
-        print(f"  📦 [파이썬 4반] {len(py_rows)}건 → py 시트 (한글 메시지 적용)")
-        append_grades_to_sheet(py_rows, course="py")
+        print(f"  📦 [파이썬 4반] {len(py_rows)}건 → py 시트 (멱등 업로드, 한글 사유)")
+        upsert_grades_to_sheet(py_rows, course="py")
 
     if web_rows:
         print(
-            f"\n  📦 [웹 1·2반] {len(web_rows)}건 → web 시트 (자동 분반, 영문 메시지 적용)"
+            f"\n  📦 [웹 1·2반] {len(web_rows)}건 → web 시트 (멱등 업로드, 영문 사유)"
         )
-        append_grades_to_sheet(web_rows, course="web")
+        upsert_grades_to_sheet(web_rows, course="web")
 
 
 def print_grading_summary(rows):
@@ -214,40 +218,25 @@ def print_grading_summary(rows):
 
     for r in rows:
         track = str(r.get("track", "")).strip()
-        score_val = r.get("점수", "")
-        reason_val = str(r.get("이유", ""))
-
-        if track in py_tracks or track.startswith("4"):
-            cls_key = "4"
-        elif track in web1_tracks:
-            cls_key = "1"
-        else:
+        cls_key = normalize_track(track)
+        if cls_key not in ["1", "2", "4"]:
             cls_key = "2"
 
+        score_val = r.get("점수", "")
         try:
             s = float(score_val)
         except (ValueError, TypeError):
             s = 0.0
 
-        if s >= 2.0 or (
-            s == 1.0
-            and "지각" not in reason_val
-            and "Late" not in reason_val
-            and "첨부" not in reason_val
-        ):
+        if s >= 1.0:
             tier = "1점"
-        elif s == 1.8 or s == 0.9:
+        elif s == 0.9 or s == 1.8:
             tier = "0.9점"
         elif s == 0.7:
             tier = "0.7점"
-        elif s in (1.5, 1.0) or (
-            s == 0.5
-            and ("지각" in reason_val or "Late" in reason_val)
-            and "위반" not in reason_val
-            and "Violation" not in reason_val
-        ):
+        elif s == 0.5 or s == 1.5:
             tier = "0.5점"
-        elif s in (1.3, 0.5, 0.2):
+        elif s == 0.2 or s == 1.3:
             tier = "0.2점"
         else:
             tier = "0점"
@@ -323,14 +312,15 @@ def extract_gmail_interactive(
     print("Loading student roster...")
     name_to_id, id_to_track, id_to_names = parse_students()
 
-    start_dt, deadline_dt = get_time_window(target_week)
+    start_dt, deadline_dt, grace_dt = get_time_window(target_week)
     late_deadlines = get_late_deadlines(deadline_dt)
     # 가장 늦은 지각 마감 (1반 월 16:00)
     max_late_dt = max(late_deadlines.values()) if late_deadlines else deadline_dt
     print(
         f"Time Window: {start_dt.strftime('%Y-%m-%d %H:%M')} ~ "
         f"{deadline_dt.strftime('%Y-%m-%d %H:%M')} "
-        f"(지각 마감: {max_late_dt.strftime('%Y-%m-%d %H:%M')})"
+        f"(유예마감: {grace_dt.strftime('%Y-%m-%d %H:%M')}, "
+        f"지각 마감: {max_late_dt.strftime('%Y-%m-%d %H:%M')})"
     )
 
     # Build regex based on target_week
@@ -489,7 +479,7 @@ def extract_gmail_interactive(
                 )
 
                 is_late = False
-                if email_dt and email_dt > deadline_dt:
+                if email_dt and email_dt > grace_dt:
                     if has_thread_reply:
                         print(
                             f" -> [주의] 답장 스레드 감지: 목록 날짜({date_str})는 교수 답장 시각일 수 있음 ({subject})"
@@ -549,26 +539,46 @@ def extract_gmail_interactive(
 
             track_num = id_to_track.get(est_id, "")
 
+            track_val = normalize_track(track_num)
+
             # Filter by track if specific tracks are requested
-            if allowed_tracks and track_num not in allowed_tracks:
-                if est_id:
+            if allowed_tracks:
+                allowed_norm = {normalize_track(t) for t in allowed_tracks}
+                if track_val not in allowed_norm and est_id:
                     continue
 
             # 지각 초과 판정: 트랙별 지각 마감 이후이면 불인정
-            if is_late and email_dt and track_num:
-                track_late_dt = late_deadlines.get(track_num, max_late_dt)
+            is_past_late = False
+            if is_late and email_dt and track_val:
+                track_late_dt = late_deadlines.get(track_val, max_late_dt)
                 if email_dt >= track_late_dt:
-                    print(f" -> 지각 초과 제외: {est_id} ({sender}) | {date_str}")
-                    continue
+                    is_past_late = True
+                    print(
+                        f" -> 지각 초과 (수업 시작 후): {est_id} ({sender}) | {date_str}"
+                    )
 
-            score = 0
-            reason = "수동 확인 요망(양식불일치/타주차)"
+            is_web = track_val in ["1", "2"]
+
+            score = 0.0
+            reason = (
+                "수동 확인 요망(양식불일치/타주차)"
+                if not is_web
+                else "Manual review required"
+            )
             task_type = "기타"
 
             if not est_id or est_id not in id_to_track:
-                score = 0
-                reason = "학번 식별 불가"
+                score = 0.0
+                reason = "Cannot identify student ID" if is_web else "학번 식별 불가"
                 task_type = "기타"
+            elif is_past_late:
+                score = 0.0
+                reason = (
+                    "Late submission (After class start)"
+                    if is_web
+                    else "지각 초과 (수업 시작 후)"
+                )
+                task_type = f"0.{found_week}" if found_week else "기타"
             else:
                 task_type = f"0.{found_week}" if found_week else "알수없음"
                 if any_assignment_re.search(clean_sub):
@@ -582,106 +592,95 @@ def extract_gmail_interactive(
                     ) or not diff_week_match
 
                     if is_this_week:
-                        base_score = 2.0
-                        violations = []
-
-                        py_tracks = {"14712", "04", "468"}
-                        is_web = track_num not in py_tracks and not str(
-                            track_num
-                        ).startswith("4")
-
-                        # Attachment check
-                        if require_attachment:
-                            if not has_att:
-                                base_score -= 1.0
-                                violations.append(
-                                    "No attachment" if is_web else "첨부없음"
-                                )
-                        else:
-                            if has_att:
-                                base_score -= 1.0
-                                violations.append(
-                                    "Attachment included" if is_web else "첨부있음"
-                                )
-
-                        # Strict exact title check (no brackets, exactly (과제|assignment)0.X학번)
                         week_val = target_week if target_week else found_week
+                        # 엄격한 제목 형식 정규식: (과제|assignment) 0.X 학번 (공백 무관, 대소문자 무관)
                         if week_val == "a":
-                            regex_str = r"^(과제|assignment)0?\.(a|10)(\d{10})$"
+                            exact_re = re.compile(
+                                r"^(?:re:)*(?:과제|assignment)0?\.(a|10)(\d{10})$",
+                                re.IGNORECASE,
+                            )
                         elif week_val == "b":
-                            regex_str = r"^(과제|assignment)0?\.(b|11)(\d{10})$"
+                            exact_re = re.compile(
+                                r"^(?:re:)*(?:과제|assignment)0?\.(b|11)(\d{10})$",
+                                re.IGNORECASE,
+                            )
                         elif week_val == "c":
-                            # 12주차 정상 제목은 0.c 또는 0.b
-                            regex_str = r"^(과제|assignment)0?\.(c|b)(\d{10})$"
+                            exact_re = re.compile(
+                                r"^(?:re:)*(?:과제|assignment)0?\.(c|b)(\d{10})$",
+                                re.IGNORECASE,
+                            )
                         else:
-                            regex_str = rf"^(과제|assignment)0?\.{week_val}(\d{{10}})$"
+                            exact_re = re.compile(
+                                rf"^(?:re:)*(?:과제|assignment)0?\.{week_val}(\d{{10}})$",
+                                re.IGNORECASE,
+                            )
 
-                        exact_title_re = re.compile(
-                            regex_str,
-                            re.IGNORECASE,
+                        clean_no_re = re.sub(r"^(?:re\s*:\s*)+", "", clean_sub)
+                        is_exact_title = bool(exact_re.match(clean_no_re))
+
+                        # 관용 인정(0.9점) 조건: 10자리 학번과 0.x 과제 번호가 제목에 모두 포함되어 있으나 서식 오차
+                        has_10digit = bool(re.search(r"\d{10}", subject))
+                        has_week_in_sub = bool(
+                            (f"0.{week_val}" in clean_sub)
+                            or (f"0{week_val}" in clean_sub)
                         )
-                        is_exact_title = bool(exact_title_re.match(clean_sub))
+                        is_minor_format = (
+                            (not is_exact_title) and has_10digit and has_week_in_sub
+                        )
 
-                        # 12주차(c) 특별 감점 규칙 적용
-                        if week_val == "c":
+                        # 첨부 파일 관련 감점 조건 (옵션)
+                        att_violation = False
+                        if require_attachment and not has_att:
+                            att_violation = True
+                        elif not require_attachment and has_att:
+                            att_violation = True
+
+                        if is_late:
+                            # ── 지각 제출 (-0.5점 감점) ──
+                            if is_exact_title or is_minor_format:
+                                score = 0.5
+                                reason = (
+                                    "Late submission (Before next class)"
+                                    if is_web
+                                    else "지각 제출 (다음 수업 시작 전)"
+                                )
+                            else:
+                                score = 0.2
+                                reason = (
+                                    "Late & Format Issue (Missing ID)"
+                                    if is_web
+                                    else "지각 + 제목 학번 누락"
+                                )
+                        else:
+                            # ── 기한 내 제출 ──
                             if is_exact_title:
-                                score = round(base_score, 1)
-                                if not violations:
+                                if att_violation:
+                                    score = 0.9
                                     reason = (
-                                        "Met all conditions (+2)"
+                                        "Minor format issue (Brackets/Extra text)"
                                         if is_web
-                                        else "정확한 양식/조건충족(+2)"
+                                        else "경미한 양식 오차 (괄호/불필요 기호)"
                                     )
                                 else:
+                                    score = 1.0
                                     reason = (
-                                        f"Violation({','.join(violations)}) ({score})"
+                                        "On-time & Exact Format"
                                         if is_web
-                                        else f"조건위반({','.join(violations)}) ({score})"
+                                        else "정상 제출 (기한내/정확한 양식)"
                                     )
-                            elif "0.12" in clean_sub:
-                                base_score -= 0.3
-                                violations.append(
-                                    "Subject error(0.12)"
-                                    if is_web
-                                    else "제목오류(0.12)"
-                                )
-                                score = round(base_score, 1)
+                            elif is_minor_format:
+                                score = 0.9
                                 reason = (
-                                    f"Violation({','.join(violations)}) ({score})"
+                                    "Minor format issue (Brackets/Extra text)"
                                     if is_web
-                                    else f"조건위반({','.join(violations)}) ({score})"
+                                    else "경미한 양식 오차 (괄호/불필요 기호)"
                                 )
                             else:
-                                base_score -= 0.2
-                                violations.append(
-                                    "Title format error" if is_web else "제목양식오류"
-                                )
-                                score = round(base_score, 1)
+                                score = 0.7
                                 reason = (
-                                    f"Violation({','.join(violations)}) ({score})"
+                                    "Missing Student ID or 0.x in Subject"
                                     if is_web
-                                    else f"조건위반({','.join(violations)}) ({score})"
-                                )
-                        else:
-                            if not is_exact_title:
-                                base_score -= 0.2
-                                violations.append(
-                                    "Title format error" if is_web else "제목양식오류"
-                                )
-
-                            if not violations:
-                                score = 2
-                                reason = (
-                                    "Met all conditions (+2)"
-                                    if is_web
-                                    else "정확한 양식/조건충족(+2)"
-                                )
-                            else:
-                                score = round(base_score, 1)
-                                reason = (
-                                    f"Violation({','.join(violations)}) ({score})"
-                                    if is_web
-                                    else f"조건위반({','.join(violations)}) ({score})"
+                                    else "제목 학번 또는 과제명 누락"
                                 )
                     else:
                         print(f" -> 타주차 과제 무시: {est_id} ({sender}) | {subject}")
@@ -689,20 +688,11 @@ def extract_gmail_interactive(
                 else:
                     print(f" -> 과제 아님 무시: {est_id} ({sender}) | {subject}")
                     continue
-            # 지각 감점 적용 (SSOT: 0.5점 감점)
-            if is_late and score > 0:
-                score = max(round(score - 0.5, 1), 0)
-                if is_web:
-                    reason = (
-                        f"Late submission ({reason})" if reason else "Late submission"
-                    )
-                else:
-                    reason = f"지각 제출 ({reason})" if reason else "지각 제출"
 
             row_data = {
                 "학번": est_id,
                 "추정하는학번": est_id,
-                "track": track_num,
+                "track": track_val,
                 "점수": score,
                 "유형": task_type,
                 "이유": reason,
