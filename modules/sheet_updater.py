@@ -121,21 +121,65 @@ def normalize_row_to_11cols(row):
     return list(row)
 
 
+TRACK_NORMALIZATION_MAP = {
+    # 1반
+    "1": "1",
+    "01": "1",
+    "web1": "1",
+    "웹1": "1",
+    "ice0001-01": "1",
+    "761": "1",
+    "15143": "1",
+    # 2반
+    "2": "2",
+    "02": "2",
+    "web2": "2",
+    "웹2": "2",
+    "ice0001-02": "2",
+    "762": "2",
+    "15144": "2",
+    # 4반
+    "4": "4",
+    "04": "4",
+    "python": "4",
+    "파이썬": "4",
+    "gpu0940-04": "4",
+    "468": "4",
+    "14712": "4",
+}
+
+
+def normalize_track(track_raw: Any) -> str:
+    """트랙 표기를 대표 번호 ('1', '2', '4') 중 하나로 정규화."""
+    if not track_raw:
+        return ""
+    clean = str(track_raw).replace("'", "").strip().lower()
+    if clean in TRACK_NORMALIZATION_MAP:
+        return TRACK_NORMALIZATION_MAP[clean]
+    if clean.startswith("4"):
+        return "4"
+    if clean.startswith("1"):
+        return "1"
+    if clean.startswith("2"):
+        return "2"
+    return clean
+
+
 def route_web_rows(rows_data):
-    """
-    web 강좌의 행 데이터에서 Track 컬럼을 분석하여
+    """web 강좌의 행 데이터에서 Track 컬럼을 분석하여
+
     1반(web1)과 2반(web2)으로 자동 분류합니다.
     11열 구조: Track은 인덱스 3 (D열)
     구 9열 구조: Track은 인덱스 2 (C열)
     """
-    web1_tracks = {"15143", "01", "761", "web1", "웹1"}
     web1_rows = []
     web2_rows = []
 
     for row in rows_data:
         track_idx = 3 if len(row) > 9 else 2
-        track = str(row[track_idx]).strip() if len(row) > track_idx else ""
-        if track in web1_tracks:
+        track_raw = str(row[track_idx]).strip() if len(row) > track_idx else ""
+        norm = normalize_track(track_raw)
+        if norm == "1":
             web1_rows.append(row)
         else:
             web2_rows.append(row)
@@ -463,6 +507,8 @@ def sort_sheet_remote(course="py"):
             clean_id = str(row[2]).lstrip("'").strip()
             last3 = clean_id[-3:] if len(clean_id) >= 3 else clean_id
             row[2] = f"'{last3}"
+        if len(row) > 3 and row[3]:
+            row[3] = normalize_track(row[3])
         row.append(extra_col[i] if i < len(extra_col) else "")
 
     # 5) 시트에 덮어쓰기 (헤더 + 정렬된 데이터, A:L)
@@ -544,6 +590,9 @@ def append_grades_to_sheet(rows_data, course="py"):
             clean_id = str(row[2]).lstrip("'").strip()
             last3 = clean_id[-3:] if len(clean_id) >= 3 else clean_id
             row[2] = f"'{last3}"
+        # 'Track' 컬럼(인덱스 3)에 대해, '1', '2', '4' 단일 숫자로 정규화
+        if len(row) > 3 and row[3]:
+            row[3] = normalize_track(row[3])
         # 'Type2' 컬럼(인덱스 6)에 대해, 구글 시트가 숫자로 자동 변환하지 못하도록 문자열 강제 포맷팅(') 적용
         if len(row) > 6 and row[6]:
             clean_type2 = str(row[6]).replace("과제", "").replace("'", "").strip()
@@ -690,12 +739,24 @@ def upsert_grades_to_sheet(rows_data, course="py"):
     normalized_rows = [normalize_row_to_11cols(r) for r in rows_data]
 
     for row in normalized_rows:
-        # ID 포맷팅 (인덱스 2)
+        # 주차(wk) 컬럼(인덱스 1)에 대해, 항상 숫자(int)로 저장하여 정렬 일관성 보장
+        if len(row) > 1 and row[1]:
+            try:
+                row[1] = int(str(row[1]).strip().replace("'", ""))
+            except ValueError:
+                pass
+
+        # ID 포맷팅 (인덱스 2): 끝 3자리 추출 + 문자열 강제 포맷팅(') 적용
         if len(row) > 2 and row[2]:
-            clean_id = str(row[2]).replace("'", "").strip()
-            row[2] = f"'{clean_id}"
+            clean_id = str(row[2]).lstrip("'").strip()
+            last3 = clean_id[-3:] if len(clean_id) >= 3 else clean_id
+            row[2] = f"'{last3}"
         else:
             clean_id = ""
+
+        # 'Track' 컬럼(인덱스 3)에 대해, '1', '2', '4' 단일 숫자로 정규화
+        if len(row) > 3 and row[3]:
+            row[3] = normalize_track(row[3])
 
         # 키 비교용 학번은 끝 3자리로 정규화
         sid_key = _normalize_sid(clean_id)

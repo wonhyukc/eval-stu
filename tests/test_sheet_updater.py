@@ -242,3 +242,30 @@ def test_normalize_reason_to_ssot():
         normalize_reason_to_ssot("정상 제출 (기한내/정확한 양식)")
         == "정상 제출 (기한내/정확한 양식)"
     )
+
+
+def test_normalize_track():
+    from modules.sheet_updater import normalize_track
+
+    # 1반 매핑
+    assert normalize_track("1") == "1"
+    assert normalize_track("01") == "1"
+    assert normalize_track("15143") == "1"
+    assert normalize_track("761") == "1"
+    assert normalize_track("web1") == "1"
+    assert normalize_track("웹1") == "1"
+
+    # 2반 매핑
+    assert normalize_track("2") == "2"
+    assert normalize_track("02") == "2"
+    assert normalize_track("15144") == "2"
+    assert normalize_track("762") == "2"
+    assert normalize_track("web2") == "2"
+
+    # 4반 매핑
+    assert normalize_track("4") == "4"
+    assert normalize_track("04") == "4"
+    assert normalize_track("14712") == "4"
+    assert normalize_track("468") == "4"
+    assert normalize_track("python") == "4"
+    assert normalize_track("파이썬") == "4"
