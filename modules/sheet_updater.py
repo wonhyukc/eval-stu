@@ -143,8 +143,101 @@ def route_web_rows(rows_data):
     return web1_rows, web2_rows
 
 
+# ── 2점 스케일 → 1.0점 스케일 점수 환산 (SSOT: 1docs/score-email.md) ──
+SCORE_2_TO_1_MAP = {
+    2.0: 1.0,  # 정상 만점
+    1.8: 0.9,  # 관용 인정 (경미 오차)
+    1.5: 0.5,  # 지각 제출 (양식 정상)
+    1.3: 0.7,  # 형식 미흡
+    1.0: 0.5,  # 특수 감점 (첨부 등) — 문맥에 따라 0.5 기본
+    0.5: 0.2,  # 지각 + 형식 미흡
+    0.0: 0.0,  # 미제출/불인정
+}
+
+# 2점 스케일 사유 → SSOT 1.0점 표준 사유 정규화 매핑
+REASON_2SCALE_TO_SSOT = {
+    # 한글 (K트랙)
+    "정확한 양식/조건충족(+2)": "정상 제출 (기한내/정확한 양식)",
+    # 영문 (E트랙)
+    "Met all conditions (+2)": "On-time & Exact Format",
+}
+
+
+def convert_score_to_1scale(score_str: str) -> str:
+    """2점 만점 스케일 점수를 1.0점 만점으로 환산.
+
+    이미 1.0 스케일인 점수(0.0-1.0 범위)는 그대로 반환.
+    """
+    try:
+        score = float(str(score_str).strip())
+    except (ValueError, TypeError):
+        return str(score_str)
+
+    # 이미 1.0 스케일인지 판별: 1.0 이하이면 그대로
+    if score <= 1.0:
+        return str(score)
+
+    # 2점 스케일 매핑
+    if score in SCORE_2_TO_1_MAP:
+        converted = SCORE_2_TO_1_MAP[score]
+        return str(converted)
+
+    # 매핑에 없는 경우 비례 환산 (score / 2)
+    converted = round(score / 2.0, 2)
+    return str(converted)
+
+
+def normalize_reason_to_ssot(reason: str) -> str:
+    """2점 스케일 사유를 SSOT 표준 사유로 정규화.
+
+    괄호 안에 점수(예: (1.8), (+2))가 포함된 사유를 표준 문구로 변환.
+    """
+    if not reason:
+        return ""
+    raw = str(reason).strip()
+
+    # 직접 매핑
+    if raw in REASON_2SCALE_TO_SSOT:
+        return REASON_2SCALE_TO_SSOT[raw]
+
+    # 괄호+점수 패턴 제거: "조건위반(제목양식오류) (1.8)" → "조건위반(제목양식오류)"
+    cleaned = re.sub(r"\s*\(\+?\d+\.?\d*\)\s*$", "", raw).strip()
+    if cleaned in REASON_2SCALE_TO_SSOT:
+        return REASON_2SCALE_TO_SSOT[cleaned]
+
+    # "지각 제출 (정확한 양식/조건충족(+2))" → "지각 제출 (다음 수업 시작 전)"
+    if "지각 제출" in raw or "Late submission" in raw:
+        inner_match = re.search(r"\((.+)\)", raw)
+        if inner_match:
+            inner = inner_match.group(1)
+            if "조건충족" in inner or "all conditions" in inner.lower():
+                if "지각" in raw:
+                    return "지각 제출 (다음 수업 시작 전)"
+                return "Late submission (Before next class)"
+        if "지각" in raw:
+            return "지각 제출 (다음 수업 시작 전)"
+        return "Late submission (Before next class)"
+
+    # "조건위반(제목양식오류)" → "경미한 양식 오차 (괄호/불필요 기호)" 또는 유사 매핑
+    if "조건위반" in raw:
+        if "제목양식오류" in raw:
+            return "경미한 양식 오차 (괄호/불필요 기호)"
+        if "첨부있음" in raw:
+            return "경미한 양식 오차 (괄호/불필요 기호)"
+        return raw  # 알 수 없는 조건위반은 원문 유지
+
+    if "Violation" in raw:
+        if "Title format error" in raw:
+            return "Minor format issue (Brackets/Extra text)"
+        if "Attachment included" in raw:
+            return "Minor format issue (Brackets/Extra text)"
+        return raw
+
+    return raw
+
+
 REASON_KO_TO_EN_MAP = {
-    "정확한 양식/조건충족(+2)": "Met all conditions (+2)",
+    "정확한 양식/조건충족(+2)": "On-time & Exact Format",
     "정상 제출 (기한내/정확한 양식)": "On-time & Exact Format",
     "정상 제출": "On-time & Exact Format",
     "경미한 양식 오차 (괄호/불필요 기호)": "Minor format issue (Brackets/Extra text)",
@@ -198,7 +291,6 @@ def translate_reason_to_en(reason: str) -> str:
 
 
 REASON_EN_TO_KO_MAP = {
-    "Met all conditions (+2)": "정확한 양식/조건충족(+2)",
     "On-time & Exact Format": "정상 제출 (기한내/정확한 양식)",
     "Minor format issue (Brackets/Extra text)": "경미한 양식 오차 (괄호/불필요 기호)",
     "Missing Student ID or 0.x in Subject": "제목 학번 또는 과제명 누락",
@@ -460,6 +552,12 @@ def append_grades_to_sheet(rows_data, course="py"):
         if len(row) > 10 and row[10]:
             clean_subject = str(row[10]).lstrip("'")
             row[10] = f"'{clean_subject}"
+        # 점수 스케일 환산: 2점 만점 → 1.0점 만점 (SSOT 정책 준수)
+        if len(row) > 4 and row[4]:
+            row[4] = convert_score_to_1scale(str(row[4]))
+        # 사유 SSOT 정규화: 2점 스케일 사유 → 표준 사유 (언어 변환 전에 적용)
+        if len(row) > 7 and row[7]:
+            row[7] = normalize_reason_to_ssot(str(row[7]))
         # 분반별 언어 정책: 파이썬(K트랙)은 한글, 웹(E트랙)은 영어
         if course == "py" and len(row) > 7:
             row[7] = translate_reason_to_ko(str(row[7]))
@@ -617,6 +715,13 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         if len(row) > 10 and row[10]:
             clean_subject = str(row[10]).lstrip("'")
             row[10] = f"'{clean_subject}"
+
+        # 점수 스케일 환산: 2점 만점 → 1.0점 만점 (SSOT 정책 준수)
+        if len(row) > 4 and row[4]:
+            row[4] = convert_score_to_1scale(str(row[4]))
+        # 사유 SSOT 정규화: 2점 스케일 사유 → 표준 사유 (언어 변환 전에 적용)
+        if len(row) > 7 and row[7]:
+            row[7] = normalize_reason_to_ssot(str(row[7]))
 
         # 분반별 언어 정책: 파이썬(K트랙)은 한글, 웹(E트랙)은 영어
         if course == "py" and len(row) > 7:

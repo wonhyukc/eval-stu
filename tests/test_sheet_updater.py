@@ -136,9 +136,9 @@ def test_sort_sheet_rows_4level():
 def test_translate_reason_to_en():
     from modules.sheet_updater import translate_reason_to_en
 
-    # 1. 사용자가 명시한 문구 검증
+    # 1. SSOT 표준 사유 매핑 검증 (2점 스케일 사유도 표준 영문으로 변환)
     assert (
-        translate_reason_to_en("정확한 양식/조건충족(+2)") == "Met all conditions (+2)"
+        translate_reason_to_en("정확한 양식/조건충족(+2)") == "On-time & Exact Format"
     )
 
     # 2. 기타 표준 사유 매핑 검증
@@ -159,7 +159,7 @@ def test_translate_reason_to_en():
     # 3. 복합 패턴 검증 (지각 및 위반)
     assert (
         translate_reason_to_en("지각 제출 (정확한 양식/조건충족(+2))")
-        == "Late submission (Met all conditions (+2))"
+        == "Late submission (On-time & Exact Format)"
     )
     assert (
         translate_reason_to_en("조건위반(첨부없음,제목양식오류)")
@@ -171,9 +171,6 @@ def test_translate_reason_to_ko():
     from modules.sheet_updater import translate_reason_to_ko
 
     # 1. 영문 -> 한글 매핑 검증
-    assert (
-        translate_reason_to_ko("Met all conditions (+2)") == "정확한 양식/조건충족(+2)"
-    )
     assert (
         translate_reason_to_ko("On-time & Exact Format")
         == "정상 제출 (기한내/정확한 양식)"
@@ -190,10 +187,58 @@ def test_translate_reason_to_ko():
 
     # 2. 복합 패턴 검증 (지각 및 위반)
     assert (
-        translate_reason_to_ko("Late submission (Met all conditions (+2))")
-        == "지각 제출 (정확한 양식/조건충족(+2))"
+        translate_reason_to_ko("Late submission (On-time & Exact Format)")
+        == "지각 제출 (정상 제출 (기한내/정확한 양식))"
     )
     assert (
         translate_reason_to_ko("Violation(No attachment,Title format error)")
         == "조건위반(첨부없음,제목양식오류)"
+    )
+
+
+def test_convert_score_to_1scale():
+    from modules.sheet_updater import convert_score_to_1scale
+
+    # 2점 스케일 → 1.0점 스케일 변환
+    assert convert_score_to_1scale("2") == "1.0"
+    assert convert_score_to_1scale("1.8") == "0.9"
+    assert convert_score_to_1scale("1.5") == "0.5"
+    assert convert_score_to_1scale("1.3") == "0.7"
+    assert convert_score_to_1scale("0") == "0.0"
+    assert convert_score_to_1scale("0.0") == "0.0"
+
+    # 이미 1.0 스케일인 점수는 그대로
+    assert convert_score_to_1scale("1.0") == "1.0"
+    assert convert_score_to_1scale("0.9") == "0.9"
+    assert convert_score_to_1scale("0.5") == "0.5"
+    assert convert_score_to_1scale("0.7") == "0.7"
+
+
+def test_normalize_reason_to_ssot():
+    from modules.sheet_updater import normalize_reason_to_ssot
+
+    # 2점 스케일 사유 → SSOT 표준 사유
+    assert (
+        normalize_reason_to_ssot("정확한 양식/조건충족(+2)")
+        == "정상 제출 (기한내/정확한 양식)"
+    )
+    assert (
+        normalize_reason_to_ssot("Met all conditions (+2)") == "On-time & Exact Format"
+    )
+
+    # 괄호 점수 제거 패턴
+    assert "경미한 양식 오차" in normalize_reason_to_ssot(
+        "조건위반(제목양식오류) (1.8)"
+    )
+
+    # 지각 사유 정규화
+    assert (
+        normalize_reason_to_ssot("지각 제출 (정확한 양식/조건충족(+2))")
+        == "지각 제출 (다음 수업 시작 전)"
+    )
+
+    # 이미 SSOT 표준인 사유는 그대로
+    assert (
+        normalize_reason_to_ssot("정상 제출 (기한내/정확한 양식)")
+        == "정상 제출 (기한내/정확한 양식)"
     )
