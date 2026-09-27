@@ -204,6 +204,75 @@ Gmail 수신함에서 학생들의 과제 제출 이메일을 크롤링·파싱�
    - **빈 회신 메일 차단 (Empty Quoted-Reply Guard)**:
      - 본문 미작성/단순 인용 회신(0.0점)은 정상 접수 답장을 발송하지 않고 재제출 안내를 발송하거나 시트에서 제외합니다.
 
+### 📎 Gmail 답장 스크립트 표준 코드 패턴
+
+다음 패턴을 `tmp/` 답장 스크립트 작성 시 기본 골격으로 사용합니다:
+
+```python
+# Gmail 답장 스크립트 표준 검색 패턴 (실전 검증)
+import time
+from urllib.parse import quote
+
+def find_and_reply(page, sender_email: str, keyword: str, reply_body: str) -> bool:
+    """
+    from:발신자이메일 기반 검색 → 폴백 → 스레드 진입 → 미답장 확인 → 발송
+    """
+    queries = [
+        f"from:{sender_email} {keyword}",  # 1순위: from + 키워드
+        f"from:{sender_email}",            # 2순위: from 단독 (폴백)
+    ]
+    for q in queries:
+        url = f"https://mail.google.com/mail/u/0/#search/{quote(q)}"
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        time.sleep(5)
+
+        rows = [
+            page.locator("tr.zA").nth(i)
+            for i in range(page.locator("tr.zA").count())
+            if page.locator("tr.zA").nth(i).is_visible()
+        ]
+        if not rows:
+            continue  # 다음 쿼리로 폴백
+
+        # 학번/과제번호 포함 행 우선 선택
+        def get_sub(r):
+            el = r.locator("span.bog")
+            return el.inner_text() if el.count() > 0 else ""
+
+        target = next(
+            (r for r in rows if keyword[:4] in get_sub(r)),
+            rows[0],
+        )
+        target.click(timeout=10000)
+        time.sleep(3)
+
+        # 교수 답장 여부 확인
+        sender_spans = page.locator("span.gD")
+        if any(
+            "wonhyukc@stu.ac.kr" in (sender_spans.nth(i).get_attribute("email") or "")
+            for i in range(sender_spans.count())
+        ):
+            return True  # 이미 답장 완료 → 스킵
+
+        # 답장 발송
+        page.keyboard.press("r")
+        time.sleep(2)
+        box = page.locator('div[role="textbox"]')
+        if box.count() == 0:
+            return False
+        box.first.fill(reply_body)
+        time.sleep(1)
+        page.keyboard.press("Control+Enter")
+        time.sleep(4)
+        return True
+    return False
+```
+
+> **사용 예시**:
+> ```python
+> ok = find_and_reply(page, "onlyvquy24@gmail.com", "과제", REPLY_BODY)
+> ```
+
 ---
 
 ## 🛠 7. 전체 실행 흐름 및 절차
