@@ -430,11 +430,24 @@ def extract_gmail_interactive(
                 subject = sub_loc.inner_text().strip() if sub_loc.count() > 0 else ""
 
                 sender_loc = row.locator("div.yW span[name]")
+                sender = ""
+                has_instructor_reply = False
                 if sender_loc.count() > 0:
-                    sender = (
-                        sender_loc.first.get_attribute("name")
-                        or sender_loc.first.inner_text()
-                    )
+                    for s_idx in range(sender_loc.count()):
+                        s_candidate = (
+                            sender_loc.nth(s_idx).get_attribute("name")
+                            or sender_loc.nth(s_idx).inner_text()
+                        )
+                        s_lower = s_candidate.lower()
+                        if "me" in s_lower or "wonhyukc@stu.ac.kr" in s_lower:
+                            has_instructor_reply = True
+                        elif not sender:
+                            sender = s_candidate
+                    if not sender:
+                        sender = (
+                            sender_loc.first.get_attribute("name")
+                            or sender_loc.first.inner_text()
+                        )
                 else:
                     sender = ""
 
@@ -450,10 +463,12 @@ def extract_gmail_interactive(
                 if not date_str:
                     date_str = "Thu, 9 Apr 2026 12:00:00 +0900"
 
-                # Exclude 'me' or explicit professor email
+                # Exclude purely professor emails (only if no student sender exists)
                 sender_lower = sender.lower()
-                if "me" == sender_lower or "wonhyukc@stu.ac.kr" in sender_lower:
-                    print(f" -> 발신자(본인) 제외: {date_str} ({subject})")
+                if not has_instructor_reply and (
+                    "me" == sender_lower or "wonhyukc@stu.ac.kr" in sender_lower
+                ):
+                    print(f" -> 발신자(본인 단독) 제외: {date_str} ({subject})")
                     continue
 
                 email_dt = None
@@ -466,13 +481,24 @@ def extract_gmail_interactive(
                 except Exception:
                     pass
 
-                # 지각 판정: deadline 이후 ~ 트랙별 지각 마감 전
+                # 지각 판정: 답장 스레드인 경우 td.xW는 교수 답장 시각일 수 있으므로 오판 방어
+                has_thread_reply = (
+                    has_instructor_reply
+                    or row.locator("span.e2").count() > 0
+                    or row.locator("span.bqe").count() > 0
+                )
+
                 is_late = False
                 if email_dt and email_dt > deadline_dt:
-                    is_late = True  # 일단 지각 표시 (트랙 확인 후 초과 여부 판정)
+                    if has_thread_reply:
+                        print(
+                            f" -> [주의] 답장 스레드 감지: 목록 날짜({date_str})는 교수 답장 시각일 수 있음 ({subject})"
+                        )
+                    else:
+                        is_late = True
 
                 # Exclude emails before start_dt (Just in case the query fetched older ones)
-                if email_dt and email_dt < start_dt:
+                if email_dt and email_dt < start_dt and not has_thread_reply:
                     print(f" -> 기간 이전 제외: {date_str} ({subject})")
                     continue
 
@@ -886,11 +912,24 @@ def run_all_grading_interactive():
                     )
 
                     sender_loc = row.locator("div.yW span[name]")
+                    sender = ""
+                    has_instructor_reply = False
                     if sender_loc.count() > 0:
-                        sender = (
-                            sender_loc.first.get_attribute("name")
-                            or sender_loc.first.inner_text()
-                        )
+                        for s_idx in range(sender_loc.count()):
+                            s_candidate = (
+                                sender_loc.nth(s_idx).get_attribute("name")
+                                or sender_loc.nth(s_idx).inner_text()
+                            )
+                            s_lower = s_candidate.lower()
+                            if "me" in s_lower or "wonhyukc@stu.ac.kr" in s_lower:
+                                has_instructor_reply = True
+                            elif not sender:
+                                sender = s_candidate
+                        if not sender:
+                            sender = (
+                                sender_loc.first.get_attribute("name")
+                                or sender_loc.first.inner_text()
+                            )
                     else:
                         sender = ""
 
@@ -906,7 +945,9 @@ def run_all_grading_interactive():
                         date_str = "Thu, 9 Apr 2026 12:00:00 +0900"
 
                     sender_lower = sender.lower()
-                    if "me" == sender_lower or "wonhyukc@stu.ac.kr" in sender_lower:
+                    if not has_instructor_reply and (
+                        "me" == sender_lower or "wonhyukc@stu.ac.kr" in sender_lower
+                    ):
                         continue
 
                     email_dt = None
@@ -921,10 +962,21 @@ def run_all_grading_interactive():
                     except Exception:
                         pass
 
+                    has_thread_reply = (
+                        has_instructor_reply
+                        or row.locator("span.e2").count() > 0
+                        or row.locator("span.bqe").count() > 0
+                    )
+
                     if email_dt and email_dt > deadline_dt:
-                        print(f" -> 지각 제외: {date_str} ({subject})")
-                        continue
-                    if email_dt and email_dt < start_dt:
+                        if has_thread_reply:
+                            print(
+                                f" -> [주의] 답장 스레드 감지: 목록 날짜({date_str})는 교수 답장 시각일 수 있음 ({subject})"
+                            )
+                        else:
+                            print(f" -> 지각 제외: {date_str} ({subject})")
+                            continue
+                    if email_dt and email_dt < start_dt and not has_thread_reply:
                         print(f" -> 기간 이전 제외: {date_str} ({subject})")
                         continue
 

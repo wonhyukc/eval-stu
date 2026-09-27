@@ -558,9 +558,7 @@ def run_grading(
                 )
 
                 is_replied = False
-                last_sender_email = ""
-                last_msg_body = ""
-                last_msg_date_str = date_str
+                student_msgs = []
 
                 for m_idx in range(msg_count):
                     m = messages.nth(m_idx)
@@ -572,17 +570,34 @@ def run_grading(
                     )
                     if "wonhyukc@stu.ac.kr" in s_email.lower():
                         is_replied = True
-                    if m_idx == msg_count - 1:
-                        last_sender_email = s_email
+                    else:
                         body_el = m.locator("div.a3s.aiL")
-                        if body_el.count() > 0:
-                            last_msg_body = body_el.inner_text()
+                        body_text = body_el.inner_text() if body_el.count() > 0 else ""
                         d_el = m.locator("span.g3")
+                        m_date_str = ""
                         if d_el.count() > 0:
-                            last_msg_date_str = (
+                            m_date_str = (
                                 d_el.first.get_attribute("title")
                                 or d_el.first.inner_text()
                             )
+                        student_msgs.append(
+                            {
+                                "sender_email": s_email,
+                                "body": body_text,
+                                "date_str": m_date_str,
+                            }
+                        )
+
+                # 학생 원본 메시지 기준 추출 (교수 답장 시각 오염 방지)
+                if student_msgs:
+                    student_submission_msg = student_msgs[0]
+                    last_sender_email = student_submission_msg["sender_email"]
+                    last_msg_body = student_submission_msg["body"]
+                    last_msg_date_str = student_submission_msg["date_str"] or date_str
+                else:
+                    last_sender_email = ""
+                    last_msg_body = ""
+                    last_msg_date_str = date_str
 
                 # 학번 추출
                 extracted_sid = None
