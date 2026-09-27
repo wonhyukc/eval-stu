@@ -67,7 +67,7 @@
 - `5input/py`, `5input/web`: 강의안 저장소(`../stu2603`)의 주차별 산출물로 향하는 심볼릭 링크 (읽기 전용, 항상 상대경로 유지)
 - `1docs/`: 채점 정책·운영 매뉴얼 문서 (`sheets.md`, `assignment-micro.md`, `scores.md`는 `../stu2603`으로의 심볼릭 링크)
 - `modules/`: 기능별(구글 시트, 이메일 파싱 등) 독립 모듈 (라이브러리 성격)
-- `bin/`: 하네스 검증 스크립트(`harness-check.sh`)와 채점·성적 처리 실행 스크립트(`fetch_gmail.py`, `calculate_final_grades.py` 등)
+- `bin/`: 이메일 과제 채점 래퍼(`grade.sh`), 통합 자동 채점기(`auto_grade_email.py`), 하네스 검증(`harness-check.sh`) 및 채점·성적 처리 실행 스크립트
 - `scripts/`: 일회성 변환·실험 스크립트
 - `tests/`: pytest 단위 테스트
 - `output/`: 채점·점수 CSV 출력 / `9output/`: 상호평가 배정 md, 등급 산출물 (둘 다 git 미추적)
@@ -112,3 +112,44 @@ pip install -r requirements-test.txt
 ```bash
 bin/harness-check.sh
 ```
+
+---
+
+## 🚀 이메일 과제(0.x) 채점 실행 가이드
+
+### 1. 단계별 채점 및 시트 동기화 (`grade.sh`)
+
+Playwright로 Gmail을 크롤링하여 채점하고 CSV 저장 및 구글 시트 업로드를 단계별로 진행하는 메인 래퍼 스크립트입니다.
+
+```bash
+# 1단계: Gmail 크롤링 + 채점 후 CSV 저장 (시트 업로드 안 함)
+./bin/grade.sh 0.4
+
+# 2단계: CSV 결과 확인 후 구글 시트에 동기화 (Upsert)
+./bin/grade.sh 0.4 sync
+
+# 3단계: 구글 시트 정렬 (주차 역순 -> 학번 오름차순)
+./bin/grade.sh 0.4 sort
+```
+
+### 2. 통합 원클릭 자동 채점 및 답장 발송 (`auto_grade_email.py`)
+
+Gmail 수집, 채점, 구글 시트 반영, 미답장 건 피드백 이메일 답장 발송까지 한 번에 처리합니다.
+
+```bash
+# 특정 과제 번호 채점 + 시트 반영 + 미답장 건 자동 답장
+.venv/bin/python bin/auto_grade_email.py --task 0.4
+
+# 시트/답장 없이 채점 결과만 콘솔로 미리보기
+.venv/bin/python bin/auto_grade_email.py --task 0.4 --dry-run
+
+# 현재 주차 자동 탐지 실행
+.venv/bin/python bin/auto_grade_email.py
+```
+
+### 3. 브라우저 세션 보조 스크립트
+
+사용자의 일상 업무용 크롬과 간섭 없이 독립된 단일 고정 전용 디렉터리(`~/.config/eval-stu-grader`, 9222 포트)를 제어합니다.
+
+- **전용 크롬 백그라운드 구동**: `./bin/start_grader_chrome.sh`
+- **전용 크롬 프로세스 종료**: `./bin/stop_grader_chrome.sh`
