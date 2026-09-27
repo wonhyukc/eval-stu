@@ -394,30 +394,55 @@ def stop_chrome(log: logging.Logger):
         log.warning(f"⚠️ Chrome 종료 중 오류: {e}")
 
 
+def _get_keepass_env(key: str) -> str:
+    """KeePass hourly.env.local 항목에서 환경변수 값을 조회한다."""
+    try:
+        env = os.environ.copy()
+        env.setdefault("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus")
+        raw = subprocess.run(
+            ["secret-tool", "lookup", "Title", "hourly.env.local"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=env,
+        ).stdout
+        for line in raw.splitlines():
+            if line.startswith(f"{key}="):
+                return line.split("=", 1)[1].strip()
+    except Exception:
+        pass
+    return ""
+
+
 def send_ntfy(
     title: str, body: str, tags: str = "mortar_board", priority: str = "default"
 ):
-    """ntfy.sh 푸시 알림 발송."""
-    topic_file = Path.home() / ".config" / "eval-stu" / "ntfy-topic"
-    topic = os.environ.get("NTFY_TOPIC")
-    if not topic and topic_file.exists():
-        topic = topic_file.read_text().strip()
-    if not topic:
-        return  # 토픽 미설정 시 알림 생략
+    """Telegram 봇으로 알림 전송 (KeePass hourly.env.local 항목 참조)."""
+    bot_token = os.environ.get("HERMES_USER_BOT") or _get_keepass_env("HERMES_USER_BOT")
+    channel = os.environ.get("TELEGRAM_HOME_CHANNEL_NAME") or _get_keepass_env(
+        "TELEGRAM_HOME_CHANNEL_NAME"
+    )
+    if not bot_token or not channel:
+        return  # 미설정 시 알림 생략
+    # @prefix 보장
+    if not channel.startswith("@") and not channel.lstrip("-").isdigit():
+        channel = f"@{channel}"
+    emoji = "🚨" if priority == "high" else "📢"
+    message = f"{emoji} <b>{title}</b>\n{body}"
     try:
         subprocess.run(
             [
                 "curl",
                 "-s",
-                "-H",
-                f"Title: {title}",
-                "-H",
-                f"Tags: {tags}",
-                "-H",
-                f"Priority: {priority}",
+                "-X",
+                "POST",
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
                 "-d",
-                body,
-                f"https://ntfy.sh/{topic}",
+                f"chat_id={channel}",
+                "-d",
+                "parse_mode=HTML",
+                "-d",
+                f"text={message}",
             ],
             capture_output=True,
             timeout=10,
@@ -469,16 +494,12 @@ def run_grading(
             context = browser.contexts[0]
             page = context.pages[0] if context.pages else context.new_page()
 
-            # Gmail 이동
-            log.info("🌐 Gmail로 이동합니다...")
+            # Gmail 이동 및 로그인 여부 확인
             if "mail.google.com" not in page.url:
                 page.goto("https://mail.google.com/")
-
-            try:
-                page.wait_for_selector('input[name="q"]', timeout=30000)
-                log.info("🎉 Gmail 검색창 진입 성공.")
-            except Exception as e:
-                log.error(f"❌ Gmail 검색창 진입 실패 (로그인 필요 확인): {e}")
+            page.wait_for_load_state("domcontentloaded", timeout=20000)
+            if "accounts.google.com" in page.url:
+                log.error("❌ Gmail 로그인 페이지로 리다이렉트됨 — 로그인 필요")
                 send_ntfy(
                     "❌ 채점 실패",
                     f"과제 {task_id}: Gmail 로그인 필요",
@@ -486,11 +507,10 @@ def run_grading(
                     priority="high",
                 )
                 return
-
-            page.wait_for_timeout(3000)
+            log.info(f"✅ Gmail 로드됨: {page.url}")
 
             # 검색 쿼리 구성
-            task_num = task_id  # "0.3"
+            task_num = task_id  # "0.4"
             wk_num = int(task_id.split(".")[1])
             wk_start = SEMESTER_START + timedelta(weeks=wk_num - 1)
             search_after = wk_start.strftime("%Y/%m/%d")
@@ -499,8 +519,13 @@ def run_grading(
                 f"after:{search_after} -from:comments-noreply@docs.google.com"
             )
             log.info(f"🔍 Gmail 검색: {search_query}")
-            page.fill('input[name="q"]', search_query)
-            page.keyboard.press("Enter")
+
+            # 검색창 UI 대신 Gmail 검색 URL로 직접 이동
+            import urllib.parse
+
+            encoded = urllib.parse.quote(search_query)
+            page.goto(f"https://mail.google.com/mail/u/0/#search/{encoded}")
+            page.wait_for_load_state("domcontentloaded", timeout=20000)
             page.wait_for_timeout(5000)
 
             email_rows = page.locator("table.F.cf.zt:visible tr.zA:visible")
@@ -508,11 +533,13 @@ def run_grading(
             log.info(f"📬 총 {row_count}개 메일 스레드 검색됨")
 
             if row_count == 0:
-                page.fill(
-                    'input[name="q"]',
-                    f"{task_num} after:{search_after} -from:comments-noreply@docs.google.com",
+                fallback_query = (
+                    f"{task_num} after:{search_after} "
+                    f"-from:comments-noreply@docs.google.com"
                 )
-                page.keyboard.press("Enter")
+                encoded_fb = urllib.parse.quote(fallback_query)
+                page.goto(f"https://mail.google.com/mail/u/0/#search/{encoded_fb}")
+                page.wait_for_load_state("domcontentloaded", timeout=20000)
                 page.wait_for_timeout(5000)
                 email_rows = page.locator("table.F.cf.zt:visible tr.zA:visible")
                 row_count = email_rows.count()
