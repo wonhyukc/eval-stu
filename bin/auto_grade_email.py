@@ -414,7 +414,7 @@ def _get_keepass_env(key: str) -> str:
     return ""
 
 
-def send_ntfy(
+def send_alert(
     title: str, body: str, tags: str = "mortar_board", priority: str = "default"
 ):
     """Telegram 봇으로 알림 전송 (KeePass hourly.env.local 항목 참조)."""
@@ -451,6 +451,10 @@ def send_ntfy(
         pass
 
 
+# 하위 호환용 별칭
+send_ntfy = send_alert
+
+
 def run_grading(
     task_id: str,
     grace_track: str | None = None,
@@ -478,7 +482,7 @@ def run_grading(
     # Step 2: Chrome CDP 연결
     if not ensure_chrome_running(log):
         log.error("❌ Chrome 기동 실패. 종료합니다.")
-        send_ntfy(
+        send_alert(
             "❌ 채점 실패",
             f"과제 {task_id}: Chrome 기동 실패",
             tags="rotating_light",
@@ -500,7 +504,7 @@ def run_grading(
             page.wait_for_load_state("domcontentloaded", timeout=20000)
             if "accounts.google.com" in page.url:
                 log.error("❌ Gmail 로그인 페이지로 리다이렉트됨 — 로그인 필요")
-                send_ntfy(
+                send_alert(
                     "❌ 채점 실패",
                     f"과제 {task_id}: Gmail 로그인 필요",
                     tags="rotating_light",
@@ -861,7 +865,9 @@ def run_grading(
     if not dry_run:
         tags = "tada" if stats["failed"] == 0 else "warning"
         priority = "default" if stats["failed"] == 0 else "high"
-        send_ntfy(f"📊 과제 {task_id} 채점 완료", summary, tags=tags, priority=priority)
+        send_alert(
+            f"📊 과제 {task_id} 채점 완료", summary, tags=tags, priority=priority
+        )
 
 
 def main():
