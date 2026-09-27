@@ -9,4 +9,7 @@ echo "=== Pushing Apps Script for 1반 (web1) ==="
 echo "=== Pushing Apps Script for 2반 (web2) ==="
 (cd "$SCRIPT_DIR/gas/web2" && npx -y @google/clasp push)
 
+echo "=== Pushing Apps Script for 4반 (py) ==="
+(cd "$SCRIPT_DIR/gas/py" && npx -y @google/clasp push)
+
 echo "✅ All Apps Scripts pushed successfully."
