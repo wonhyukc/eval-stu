@@ -8,10 +8,82 @@ const SCORE_TAB_NAME = "score";
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("관리자 설정")
+    .addItem("⚡ score 자동 정렬 트리거 켜기", "createOnChangeTrigger")
+    .addSeparator()
     .addItem("🔄 score 탭 정렬 (주차↓ 학번↑)", "sortScoreTab")
     .addSeparator()
     .addItem("🔒 progress 1-4행 + 고정열 보호 설정", "protectProgressTab")
     .addToUi();
+}
+
+/**
+ * onChange 이벤트 설치형 트리거를 생성합니다.
+ * 최초 1회만 실행하면 이후 score 탭 자동 정렬이 활성화됩니다.
+ */
+function createOnChangeTrigger() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const trigger of triggers) {
+    if (trigger.getHandlerFunction() === "onSpreadsheetChange") {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  }
+  ScriptApp.newTrigger("onSpreadsheetChange")
+    .forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet())
+    .onChange()
+    .create();
+  SpreadsheetApp.getUi().alert("⚡ onChange 트리거가 성공적으로 활성화되었습니다.\nscore 탭 자동 정렬이 켜졌습니다.");
+}
+
+/**
+ * 스프레드시트 onChange 통합 핸들러.
+ * score 탭 자동 정렬 (API 업로드 후 60초 쓰로틀)
+ */
+function onSpreadsheetChange(e) {
+  try {
+    autoSortScoreTabSilent();
+  } catch (err) {
+    console.error("score 탭 자동 정렬 중 오류:", err);
+  }
+}
+
+/**
+ * score 탭을 자동 정렬합니다. (60초 쓰로틀 — 연속 이벤트 중복 실행 방지)
+ * UI alert 없이 조용히 실행되며, 수동 실행은 sortScoreTab() 메뉴를 사용합니다.
+ */
+function autoSortScoreTabSilent() {
+  const THROTTLE_MS = 60 * 1000;
+  const props = PropertiesService.getScriptProperties();
+  const lastSort = parseInt(props.getProperty("LAST_SCORE_SORT_TS") || "0");
+  const now = Date.now();
+  if (now - lastSort < THROTTLE_MS) {
+    console.log("score 자동 정렬 스킵 (60초 이내 중복 실행 방지)");
+    return;
+  }
+  props.setProperty("LAST_SCORE_SORT_TS", String(now));
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SCORE_TAB_NAME);
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow < 2) return;
+
+  const dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
+  dataRange.sort([
+    { column: 2, ascending: false },
+    { column: 6, ascending: true },
+    { column: 7, ascending: true },
+    { column: 3, ascending: true },
+  ]);
+
+  const total = lastRow - 1;
+  const noValues = [];
+  for (let i = 0; i < total; i++) {
+    noValues.push([total - i]);
+  }
+  sheet.getRange(2, 1, total, 1).setValues(noValues);
+  console.log(`[자동 정렬] score 탭 ${total}행 정렬 완료`);
 }
 
 /**

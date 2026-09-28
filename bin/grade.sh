@@ -5,7 +5,9 @@
 # 사용법:
 #   ./bin/grade.sh 0.4          # 크롤링 + CSV 저장
 #   ./bin/grade.sh 0.4 sync     # CSV → 구글 시트 업로드
-#   ./bin/grade.sh 0.4 sort     # 구글 시트 정렬
+#
+# ※ 정렬은 GAS onChange 트리거가 자동 처리합니다.
+#   수동 정렬이 필요하면 시트 메뉴 > 관리자 설정 > score 탭 정렬
 # ────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -22,13 +24,14 @@ if [[ $# -eq 0 ]]; then
 사용법:
   ./bin/grade.sh <과제번호>           # 1단계: Gmail 크롤링 → CSV 저장
   ./bin/grade.sh <과제번호> sync      # 2단계: CSV → 구글 시트 업로드
-  ./bin/grade.sh <과제번호> sort      # 3단계: 구글 시트 정렬 (주차↓ 학번↑)
 
 예시:
   ./bin/grade.sh 0.4                 # Gmail에서 메일 수집 + 채점 → CSV
   ./bin/grade.sh 4                   # 위와 동일 (0. 자동 접두)
   ./bin/grade.sh 0.4 sync            # CSV 확인 후 시트에 반영
-  ./bin/grade.sh 0.4 sort            # py 시트 정렬 (주차 역순 + 학번)
+
+※ 정렬: GAS onChange 트리거가 sync 직후 자동 수행합니다.
+   수동 정렬: 시트 열기 → 관리자 설정 → score 탭 정렬
 EOF
   exit 0
 fi
@@ -44,21 +47,8 @@ fi
 # 0.4 → 4  (주차 번호만 추출)
 WEEK="${TASK#0.}"
 
-if [[ "$ACTION" == "sort" ]]; then
-  # ── 3단계: 구글 시트 정렬 ──
-  echo ""
-  echo "═══════════════════════════════════════════════"
-  echo "  🔄 구글 시트 정렬 (주차 역순 → 학번 오름차순)"
-  echo "═══════════════════════════════════════════════"
-  echo ""
 
-  "$PYTHON" -c "
-from modules.sheet_updater import sort_sheet_remote
-# py 시트
-sort_sheet_remote(course='py')
-"
-
-elif [[ "$ACTION" == "sync" ]]; then
+if [[ "$ACTION" == "sync" ]]; then
   # ── 2단계: CSV → 구글 시트 ──
   CSV_FILE=""
   for candidate in \

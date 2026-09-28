@@ -148,6 +148,7 @@ function syncResourceTab() {
  * 스프레드시트의 onChange 이벤트를 처리하는 통합 핸들러 함수입니다.
  * 1) 임의 시트 생성 감지 시 삭제 & 탭 순서 강제 복구
  * 2) Q&A 새 질문 감지 시 이메일 알림 발송
+ * 3) score 탭 자동 정렬 (API 업로드 후 60초 쓰로틀)
  */
 function onSpreadsheetChange(e) {
   try {
@@ -161,6 +162,52 @@ function onSpreadsheetChange(e) {
   } catch (err) {
     console.error("Q&A 알림 확인 중 오류:", err);
   }
+
+  try {
+    autoSortScoreTabSilent();
+  } catch (err) {
+    console.error("score 탭 자동 정렬 중 오류:", err);
+  }
+}
+
+/**
+ * score 탭을 자동 정렬합니다. (60초 쓰로틀 — 연속 이벤트 중복 실행 방지)
+ * UI alert 없이 조용히 실행되며, 수동 실행은 sortScoreTab() 메뉴를 사용합니다.
+ */
+function autoSortScoreTabSilent() {
+  const THROTTLE_MS = 60 * 1000;
+  const props = PropertiesService.getScriptProperties();
+  const lastSort = parseInt(props.getProperty("LAST_SCORE_SORT_TS") || "0");
+  const now = Date.now();
+  if (now - lastSort < THROTTLE_MS) {
+    console.log("score 자동 정렬 스킵 (60초 이내 중복 실행 방지)");
+    return;
+  }
+  props.setProperty("LAST_SCORE_SORT_TS", String(now));
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("score");
+  if (!sheet) return;
+
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow < 2) return;
+
+  const dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
+  dataRange.sort([
+    { column: 2, ascending: false },
+    { column: 6, ascending: true },
+    { column: 7, ascending: true },
+    { column: 3, ascending: true },
+  ]);
+
+  const total = lastRow - 1;
+  const noValues = [];
+  for (let i = 0; i < total; i++) {
+    noValues.push([total - i]);
+  }
+  sheet.getRange(2, 1, total, 1).setValues(noValues);
+  console.log(`[자동 정렬] score 탭 ${total}행 정렬 완료`);
 }
 
 /**
