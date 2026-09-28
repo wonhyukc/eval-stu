@@ -919,4 +919,12 @@ def upsert_grades_to_sheet(rows_data, course="py"):
             print(f"❌ 신규 행 추가 실패: {e}")
             success = False
 
+    # 3. 신규 행이 추가된 경우 자동 re-sort (정렬 일관성 보장)
+    if rows_to_append and success:
+        print("🔄 신규 행 추가에 따른 자동 정렬 실행 중...")
+        try:
+            sort_sheet_remote(course=course)
+        except Exception as e:
+            print(f"⚠️ 자동 정렬 실패 (데이터는 정상 기록됨): {e}")
+
     return success
