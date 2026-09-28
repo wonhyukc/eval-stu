@@ -649,12 +649,18 @@ def append_grades_to_sheet(rows_data, course="py"):
             clean_subject = str(row[10]).lstrip("'")
             row[10] = f"'{clean_subject}"
         # 점수 스케일 환산:
-        # - 실습 과제(lab): 3.0점 만점 스케일 적용 (SSOT 정책 준수)
+        # - 실습 과제(lab): score 탭에는 루브릭 만점 점수(원점수: 9점, 10점 등) 그대로 기록
         # - 이메일 과제(hw) 및 기타: 1.0점 만점 스케일 적용 (SSOT 정책 준수)
         if len(row) > 4 and row[4]:
             t1_val = str(row[5]).strip().lower() if len(row) > 5 and row[5] else ""
-            if t1_val in ("lab", "실습"):
-                row[4] = convert_lab_score_to_3scale(str(row[4]))
+            t2_val = str(row[6]).strip().lower() if len(row) > 6 and row[6] else ""
+            if (
+                t1_val in ("lab", "실습")
+                or t2_val in ("lab", "실습")
+                or t2_val.startswith("l")
+            ):
+                # 실습 과제는 루브릭 원점수 그대로 유지 (grade 탭 환산 시 3.0점 스케일 적용)
+                pass
             else:
                 row[4] = convert_score_to_1scale(str(row[4]))
         # 사유 SSOT 정규화: 2점 스케일 사유 → 표준 사유 (언어 변환 전에 적용)
@@ -831,12 +837,18 @@ def upsert_grades_to_sheet(rows_data, course="py"):
             row[10] = f"'{clean_subject}"
 
         # 점수 스케일 환산:
-        # - 실습 과제(lab): 3.0점 만점 스케일 적용 (SSOT 정책 준수)
+        # - 실습 과제(lab): score 탭에는 루브릭 만점 점수(원점수: 9점, 10점 등) 그대로 기록
         # - 이메일 과제(hw) 및 기타: 1.0점 만점 스케일 적용 (SSOT 정책 준수)
         if len(row) > 4 and row[4]:
             t1_val = str(row[5]).strip().lower() if len(row) > 5 and row[5] else ""
-            if t1_val in ("lab", "실습"):
-                row[4] = convert_lab_score_to_3scale(str(row[4]))
+            t2_val = str(row[6]).strip().lower() if len(row) > 6 and row[6] else ""
+            if (
+                t1_val in ("lab", "실습")
+                or t2_val in ("lab", "실습")
+                or t2_val.startswith("l")
+            ):
+                # 실습 과제는 루브릭 원점수 그대로 유지 (grade 탭 환산 시 3.0점 스케일 적용)
+                pass
             else:
                 row[4] = convert_score_to_1scale(str(row[4]))
         # 사유 SSOT 정규화: 2점 스케일 사유 → 표준 사유 (언어 변환 전에 적용)
