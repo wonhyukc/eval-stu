@@ -20,9 +20,8 @@ const ALLOWED_SHEET_ORDER = [
   "Q&A",
   "score",
   "grade",
-  "peer-eval-web",
-  "peer-eval-list",
-  "peer-eval-assignment",
+  "peer-eval-submissions",
+  "peer-eval",
   "agenda"
 ];
 
@@ -38,6 +37,7 @@ function onOpen() {
     .addItem('🔄 시트 순서 지금 정렬 및 미허용 탭 삭제', 'manualEnforceStructure')
     .addItem('🔒 Q&A 1행 + D열 보호 설정 (학생 수정 차단)', 'protectHeaderAndColumnD')
     .addItem('🔒 progress 1-4행 + 고정열 보호 설정', 'protectProgressTab')
+    .addItem('🔑 서비스 계정 권한 부여 & grade 수식/헤더 동기화', 'syncServiceAccountAndGradeTab')
     .addSeparator()
     .addItem('🔄 score 탭 정렬 (주차↓ 학번↑)', 'sortScoreTab')
     .addToUi();
@@ -308,8 +308,13 @@ function protectHeaderAndColumnD() {
 
   const results = [];
 
+  const serviceAccount = "driveapi@drive-project-84200.iam.gserviceaccount.com";
+
   for (const sheet of qaSheets) {
     const name = sheet.getName();
+
+    // D1 헤더 영문화 강제
+    sheet.getRange(1, 4).setValue("Email Status");
 
     // 1행 보호 (헤더)
     const headerRange = sheet.getRange(1, 1, 1, sheet.getLastColumn() || 10);
@@ -317,6 +322,7 @@ function protectHeaderAndColumnD() {
     headerProtection.setDescription("QA_HEADER_ROW");
     headerProtection.removeEditors(headerProtection.getEditors());
     headerProtection.addEditor(me);
+    try { headerProtection.addEditor(serviceAccount); } catch (e) {}
     if (headerProtection.canDomainEdit()) headerProtection.setDomainEdit(false);
 
     // D열 전체 보호 (알림상태)
@@ -325,9 +331,10 @@ function protectHeaderAndColumnD() {
     colDProtection.setDescription("QA_NOTIFY_COL");
     colDProtection.removeEditors(colDProtection.getEditors());
     colDProtection.addEditor(me);
+    try { colDProtection.addEditor(serviceAccount); } catch (e) {}
     if (colDProtection.canDomainEdit()) colDProtection.setDomainEdit(false);
 
-    results.push(`✅ [${name}] 1행 + D열 보호 완료`);
+    results.push(`✅ [${name}] 1행 + D열 보호 완료 (서비스 계정 허용됨)`);
   }
 
   SpreadsheetApp.getUi().alert(results.join("\n") + "\n\n교수님만 수정 가능합니다.");
@@ -424,4 +431,69 @@ function protectProgressTab() {
     "✅ progress 탭 보호 설정 완료\n- 1-4행 (통계/헤더): 보호\n- A-I열 (고정 정보): 보호\n- J열 이후: 학생 입력 허용"
   );
 }
+
+/**
+ * 서비스 계정 권한 부여 및 grade 탭/영문 헤더 동기화 (웹 1반)
+ */
+function syncServiceAccountAndGradeTab() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const serviceAccount = "driveapi@drive-project-84200.iam.gserviceaccount.com";
+
+  // 1. 모든 시트 및 범위 보호에서 서비스 계정을 editor로 추가
+  const sheetProtections = ss.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+  for (const sp of sheetProtections) {
+    try {
+      sp.addEditor(serviceAccount);
+    } catch (e) {
+      console.warn("Sheet protection editor add failed:", e);
+    }
+  }
+  const rangeProtections = ss.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+  for (const rp of rangeProtections) {
+    try {
+      rp.addEditor(serviceAccount);
+    } catch (e) {
+      console.warn("Range protection editor add failed:", e);
+    }
+  }
+
+  // 2. grade 탭 수식 업데이트 (D3:D33, E3:E33)
+  const gradeSheet = ss.getSheetByName("grade");
+  if (gradeSheet) {
+    const lastRow = gradeSheet.getLastRow();
+    for (let r = 3; r <= lastRow; r++) {
+      gradeSheet.getRange(r, 4).setFormula(`=SUMIFS(score!$M:$M, score!$C:$C, $B${r}, score!$F:$F, "hw")`);
+      gradeSheet.getRange(r, 5).setFormula(`=SUMIFS(score!$M:$M, score!$C:$C, $B${r}, score!$F:$F, "class")`);
+    }
+  }
+
+  // 3. Q&A 탭 D1 영문화
+  const qaSheet = ss.getSheetByName("Q&A");
+  if (qaSheet) {
+    qaSheet.getRange(1, 4).setValue("Email Status");
+  }
+
+  // 4. peer-eval-list 탭 보호 해제 및 C1:J1 영문화
+  const listSheet = ss.getSheetByName("peer-eval-list");
+  if (listSheet) {
+    try {
+      const protections = listSheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+      for (const p of protections) {
+        p.remove();
+      }
+      const listHeaders = [
+        ["Evaluator_ID", "Evaluator_Name", "Reviewee1_ID", "Reviewee1_Name",
+         "Reviewee2_ID", "Reviewee2_Name", "Reviewee3_ID", "Reviewee3_Name"]
+      ];
+      listSheet.getRange(1, 3, 1, 8).setValues(listHeaders);
+    } catch (e) {
+      console.warn("Failed to update peer-eval-list:", e);
+    }
+  }
+
+  SpreadsheetApp.getUi().alert(
+    "✅ 서비스 계정 권한 추가 및 grade 탭/영문 헤더 동기화 완료!"
+  );
+}
+
 

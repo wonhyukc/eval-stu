@@ -34,14 +34,14 @@ COURSE_CONFIG = {
     },
     "web1": {
         "sheet_id": "1pVbDITgW07ErTS4sQHDt1edVDCVKXrLAeRG3fF7-fAk",
-        "tab_name": "peer-eval-web",
+        "tab_name": "peer-eval-submissions",
         "roster_file": "5input/students/wb-students.md",
         "track_id": "15143",
         "track_code": "01",
     },
     "web2": {
         "sheet_id": "1OMeWuYt45TZMygmkh5hOhqSCCUFYJv4iE0hTY554iAo",
-        "tab_name": "peer-eval-web",
+        "tab_name": "peer-eval-submissions",
         "roster_file": "5input/students/wb-students.md",
         "track_id": "15144",
         "track_code": "02",
@@ -142,7 +142,7 @@ def main():
                 [
                     raw[0] if len(raw) > 0 else "",
                     raw[1] if len(raw) > 1 else "",
-                    f"'{v['student_id']}",
+                    f"'{str(v['student_id'])[-3:]}",
                     v["url"],
                     v["commit"],
                     str(v["week"]),
