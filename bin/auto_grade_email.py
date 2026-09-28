@@ -379,6 +379,29 @@ def ensure_chrome_running(log: logging.Logger) -> bool:
     return True
 
 
+def dismiss_popups(page, log: logging.Logger | None = None):
+    """Gmail 프로모션/알림 다이얼로그 자동 닫기."""
+    try:
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(300)
+        dialog_btns = page.locator(
+            'div[role="dialog"] button:has-text("Not now"), '
+            'div[role="dialog"] button:has-text("No thanks"), '
+            'div[role="dialog"] button:has-text("Dismiss"), '
+            'div[role="dialog"] button:has-text("다음에"), '
+            'div[role="dialog"] button:has-text("닫기"), '
+            'div[role="dialog"] [aria-label="Close"], '
+            'div[role="dialog"] [aria-label="닫기"]'
+        )
+        if dialog_btns.count() > 0 and dialog_btns.first.is_visible():
+            if log:
+                log.info("  ⚠️ 다이얼로그 팝업 감지되어 닫기 실행")
+            dialog_btns.first.click()
+            page.wait_for_timeout(500)
+    except Exception:
+        pass
+
+
 def stop_chrome(log: logging.Logger):
     """전용 Chrome만 안전 종료."""
     stop_script = BASE_DIR / "bin" / "stop_grader_chrome.sh"
@@ -532,6 +555,7 @@ def run_grading(
             page.wait_for_load_state("domcontentloaded", timeout=20000)
             page.wait_for_timeout(5000)
 
+            dismiss_popups(page, log)
             email_rows = page.locator("table.F.cf.zt:visible tr.zA:visible")
             row_count = email_rows.count()
             log.info(f"📬 총 {row_count}개 메일 스레드 검색됨")
@@ -545,192 +569,284 @@ def run_grading(
                 page.goto(f"https://mail.google.com/mail/u/0/#search/{encoded_fb}")
                 page.wait_for_load_state("domcontentloaded", timeout=20000)
                 page.wait_for_timeout(5000)
+                dismiss_popups(page, log)
                 email_rows = page.locator("table.F.cf.zt:visible tr.zA:visible")
                 row_count = email_rows.count()
                 log.info(f"📬 재검색 결과: {row_count}개 스레드")
 
             collected = []
+            page_num = 1
 
-            for idx in range(row_count):
-                log.info(f"\n--- [스레드 {idx + 1}/{row_count}] ---")
-                rows_current = page.locator("table.F.cf.zt:visible tr.zA:visible")
-                if idx >= rows_current.count():
-                    break
-                target_row = rows_current.nth(idx)
-
-                sub_el = target_row.locator("span.bog")
-                subject = sub_el.inner_text().strip() if sub_el.count() > 0 else ""
-
-                sender_el = target_row.locator("div.yW span[name]")
-                sender_name = (
-                    (
-                        sender_el.first.get_attribute("name")
-                        or sender_el.first.inner_text()
-                    )
-                    if sender_el.count() > 0
-                    else ""
-                )
-
-                date_el = target_row.locator("td.xW span")
-                date_str = (
-                    date_el.first.get_attribute("title") if date_el.count() > 0 else ""
-                )
-                if not date_str and date_el.count() > 0:
-                    date_str = date_el.first.inner_text()
-
-                target_row.click()
-                page.wait_for_timeout(2500)
-                thread_url = page.url
-
-                messages = page.locator("div.adn.ads")
-                msg_count = messages.count()
+            while True:
+                dismiss_popups(page, log)
+                email_rows = page.locator("table.F.cf.zt:visible tr.zA:visible")
+                row_count = email_rows.count()
                 log.info(
-                    f"   메시지 수: {msg_count}, 제목: '{subject}', 발신자: '{sender_name}'"
+                    f"\n📑 [페이지 {page_num}] {row_count}개 메일 스레드 순회 시작"
                 )
 
-                is_replied = False
-                student_msgs = []
-
-                for m_idx in range(msg_count):
-                    m = messages.nth(m_idx)
-                    s_email_el = m.locator("span.gD")
-                    s_email = (
-                        s_email_el.get_attribute("email")
-                        if s_email_el.count() > 0
-                        else ""
+                for idx in range(row_count):
+                    log.info(
+                        f"\n--- [페이지 {page_num} 스레드 {idx + 1}/{row_count}] ---"
                     )
-                    if "wonhyukc@stu.ac.kr" in s_email.lower():
-                        is_replied = True
-                    else:
-                        body_el = m.locator("div.a3s.aiL")
-                        body_text = body_el.inner_text() if body_el.count() > 0 else ""
-                        d_el = m.locator("span.g3")
-                        m_date_str = ""
-                        if d_el.count() > 0:
-                            m_date_str = (
-                                d_el.first.get_attribute("title")
-                                or d_el.first.inner_text()
+                    try:
+                        dismiss_popups(page)
+                        rows_current = page.locator(
+                            "table.F.cf.zt:visible tr.zA:visible"
+                        )
+                        if idx >= rows_current.count():
+                            break
+                        target_row = rows_current.nth(idx)
+
+                        sub_el = target_row.locator("span.bog")
+                        subject = (
+                            sub_el.inner_text().strip() if sub_el.count() > 0 else ""
+                        )
+
+                        sender_el = target_row.locator("div.yW span[name]")
+                        sender_name = (
+                            (
+                                sender_el.first.get_attribute("name")
+                                or sender_el.first.inner_text()
                             )
-                        student_msgs.append(
+                            if sender_el.count() > 0
+                            else ""
+                        )
+
+                        date_el = target_row.locator("td.xW span")
+                        date_str = (
+                            date_el.first.get_attribute("title")
+                            if date_el.count() > 0
+                            else ""
+                        )
+                        if not date_str and date_el.count() > 0:
+                            date_str = date_el.first.inner_text()
+
+                        # ── Grace-period 고속 스킵 ──────────────────────────
+                        # 목록 뷰에서 학번 추출 → 트랙 판별 → 대상 아니면 클릭 없이 스킵
+                        if grace_track:
+                            fast_sid = None
+                            m_id = re.search(r"2026\d{6}", subject)
+                            if m_id:
+                                fast_sid = m_id.group(0)
+                            if fast_sid and fast_sid in students_by_id:
+                                fast_track = students_by_id[fast_sid]["track"]
+                                if fast_track != grace_track:
+                                    log.info(
+                                        f"   메시지 제목: '{subject}', 발신자: '{sender_name}'"
+                                        f"\n   ⏭️ [고속 스킵] 트랙 {fast_track} → 대상 아님 (대상: {grace_track})"
+                                    )
+                                    stats["skipped"] += 1
+                                    continue
+                        # ───────────────────────────────────────────────────
+
+                        try:
+                            target_row.click(timeout=10000)
+                        except Exception:
+                            dismiss_popups(page, log)
+                            target_row.click(timeout=10000, force=True)
+
+                        page.wait_for_timeout(2500)
+                        thread_url = page.url
+
+                        messages = page.locator("div.adn.ads")
+                        msg_count = messages.count()
+                        log.info(
+                            f"   메시지 수: {msg_count}, 제목: '{subject}', 발신자: '{sender_name}'"
+                        )
+
+                        is_replied = False
+                        student_msgs = []
+
+                        for m_idx in range(msg_count):
+                            m = messages.nth(m_idx)
+                            s_email_el = m.locator("span.gD")
+                            s_email = (
+                                s_email_el.get_attribute("email")
+                                if s_email_el.count() > 0
+                                else ""
+                            )
+                            if "wonhyukc@stu.ac.kr" in s_email.lower():
+                                is_replied = True
+                            else:
+                                body_el = m.locator("div.a3s.aiL")
+                                body_text = (
+                                    body_el.inner_text() if body_el.count() > 0 else ""
+                                )
+                                d_el = m.locator("span.g3")
+                                m_date_str = ""
+                                if d_el.count() > 0:
+                                    m_date_str = (
+                                        d_el.first.get_attribute("title")
+                                        or d_el.first.inner_text()
+                                    )
+                                student_msgs.append(
+                                    {
+                                        "sender_email": s_email,
+                                        "body": body_text,
+                                        "date_str": m_date_str,
+                                    }
+                                )
+
+                        # 학생 원본 메시지 기준 추출 (교수 답장 시각 오염 방지)
+                        if student_msgs:
+                            student_submission_msg = student_msgs[0]
+                            last_sender_email = student_submission_msg["sender_email"]
+                            last_msg_body = student_submission_msg["body"]
+                            last_msg_date_str = (
+                                student_submission_msg["date_str"] or date_str
+                            )
+                        else:
+                            last_sender_email = ""
+                            last_msg_body = ""
+                            last_msg_date_str = date_str
+
+                        # 학번 추출
+                        extracted_sid = None
+                        m_id = re.search(r"2026\d{6}", subject)
+                        if m_id:
+                            extracted_sid = m_id.group(0)
+                        if not extracted_sid and last_sender_email:
+                            clean_email = last_sender_email.lower().strip()
+                            if clean_email in email_to_id:
+                                extracted_sid = email_to_id[clean_email]
+                            else:
+                                m_em = re.search(r"2026\d{6}", clean_email)
+                                if m_em:
+                                    extracted_sid = m_em.group(0)
+                        if not extracted_sid and sender_name:
+                            clean_name = re.sub(r"\s+", "", sender_name).lower()
+                            if clean_name in name_to_id:
+                                extracted_sid = name_to_id[clean_name]
+
+                        student_info = (
+                            students_by_id.get(extracted_sid) if extracted_sid else None
+                        )
+
+                        # Grace-period 모드: 해당 트랙만 처리
+                        if (
+                            grace_track
+                            and student_info
+                            and student_info["track"] != grace_track
+                        ):
+                            log.info(
+                                f"   ⏭️ Grace-period 모드: 트랙 {student_info['track']} → 스킵 (대상: {grace_track})"
+                            )
+                            stats["skipped"] += 1
+                            back_btn = page.locator(
+                                'div[aria-label="Back to search"], div[aria-label="검색결과로 돌아가기"], div[act="19"]'
+                            )
+                            if back_btn.count() > 0 and back_btn.first.is_visible():
+                                back_btn.first.click()
+                            else:
+                                page.go_back()
+                            page.wait_for_timeout(2000)
+                            continue
+
+                        if not student_info:
+                            log.warning(
+                                f"   ⚠️ 수강생 매칭 실패 (Subject: {subject}, Sender: {sender_name})"
+                            )
+                        else:
+                            log.info(
+                                f"   👤 매칭: {student_info['eng_name']} ({student_info['id']}, 트랙{student_info['track']})"
+                            )
+
+                        # 날짜 파싱
+                        email_dt = None
+                        formatted_date = datetime.now(KST).strftime("%-m/%-d")
+                        try:
+                            if last_msg_date_str:
+                                email_dt = email.utils.parsedate_to_datetime(
+                                    last_msg_date_str
+                                )
+                                if email_dt.tzinfo is None:
+                                    email_dt = email_dt.replace(
+                                        tzinfo=timezone.utc
+                                    ).astimezone(KST)
+                                else:
+                                    email_dt = email_dt.astimezone(KST)
+                                formatted_date = email_dt.strftime("%-m/%-d")
+                        except Exception:
+                            pass
+
+                        score, reason_en, reason_ko, details = evaluate_submission(
+                            subject, last_msg_body, student_info, email_dt, task_id
+                        )
+                        log.info(f"   📊 채점: {score:.1f}점 | {reason_en} | {details}")
+                        log.info(
+                            f"   ✉️ 답장: {'완료(스킵)' if is_replied else '미답장(대상)'}"
+                        )
+                        stats["graded"] += 1
+
+                        collected.append(
                             {
-                                "sender_email": s_email,
-                                "body": body_text,
-                                "date_str": m_date_str,
+                                "student_info": student_info,
+                                "extracted_sid": extracted_sid,
+                                "sender_name": sender_name,
+                                "sender_email": last_sender_email,
+                                "subject": subject,
+                                "score": score,
+                                "reason_en": reason_en,
+                                "reason_ko": reason_ko,
+                                "date": formatted_date,
+                                "is_replied": is_replied,
+                                "last_msg_body": last_msg_body,
+                                "thread_url": thread_url,
                             }
                         )
 
-                # 학생 원본 메시지 기준 추출 (교수 답장 시각 오염 방지)
-                if student_msgs:
-                    student_submission_msg = student_msgs[0]
-                    last_sender_email = student_submission_msg["sender_email"]
-                    last_msg_body = student_submission_msg["body"]
-                    last_msg_date_str = student_submission_msg["date_str"] or date_str
-                else:
-                    last_sender_email = ""
-                    last_msg_body = ""
-                    last_msg_date_str = date_str
-
-                # 학번 추출
-                extracted_sid = None
-                m_id = re.search(r"2026\d{6}", subject)
-                if m_id:
-                    extracted_sid = m_id.group(0)
-                if not extracted_sid and last_sender_email:
-                    clean_email = last_sender_email.lower().strip()
-                    if clean_email in email_to_id:
-                        extracted_sid = email_to_id[clean_email]
-                    else:
-                        m_em = re.search(r"2026\d{6}", clean_email)
-                        if m_em:
-                            extracted_sid = m_em.group(0)
-                if not extracted_sid and sender_name:
-                    clean_name = re.sub(r"\s+", "", sender_name).lower()
-                    if clean_name in name_to_id:
-                        extracted_sid = name_to_id[clean_name]
-
-                student_info = (
-                    students_by_id.get(extracted_sid) if extracted_sid else None
-                )
-
-                # Grace-period 모드: 해당 트랙만 처리
-                if (
-                    grace_track
-                    and student_info
-                    and student_info["track"] != grace_track
-                ):
-                    log.info(
-                        f"   ⏭️ Grace-period 모드: 트랙 {student_info['track']} → 스킵 (대상: {grace_track})"
-                    )
-                    stats["skipped"] += 1
-                    back_btn = page.locator(
-                        'div[aria-label="Back to search"], div[aria-label="검색결과로 돌아가기"], div[act="19"]'
-                    )
-                    if back_btn.count() > 0 and back_btn.first.is_visible():
-                        back_btn.first.click()
-                    else:
-                        page.go_back()
-                    page.wait_for_timeout(2000)
-                    continue
-
-                if not student_info:
-                    log.warning(
-                        f"   ⚠️ 수강생 매칭 실패 (Subject: {subject}, Sender: {sender_name})"
-                    )
-                else:
-                    log.info(
-                        f"   👤 매칭: {student_info['eng_name']} ({student_info['id']}, 트랙{student_info['track']})"
-                    )
-
-                # 날짜 파싱
-                email_dt = None
-                formatted_date = datetime.now(KST).strftime("%-m/%-d")
-                try:
-                    if last_msg_date_str:
-                        email_dt = email.utils.parsedate_to_datetime(last_msg_date_str)
-                        if email_dt.tzinfo is None:
-                            email_dt = email_dt.replace(tzinfo=timezone.utc).astimezone(
-                                KST
-                            )
+                        back_btn = page.locator(
+                            'div[aria-label="Back to search"], div[aria-label="검색결과로 돌아가기"], div[act="19"]'
+                        )
+                        if back_btn.count() > 0 and back_btn.first.is_visible():
+                            back_btn.first.click()
                         else:
-                            email_dt = email_dt.astimezone(KST)
-                        formatted_date = email_dt.strftime("%-m/%-d")
-                except Exception:
-                    pass
+                            page.go_back()
+                        page.wait_for_timeout(2000)
 
-                score, reason_en, reason_ko, details = evaluate_submission(
-                    subject, last_msg_body, student_info, email_dt, task_id
-                )
-                log.info(f"   📊 채점: {score:.1f}점 | {reason_en} | {details}")
-                log.info(
-                    f"   ✉️ 답장: {'완료(스킵)' if is_replied else '미답장(대상)'}"
-                )
-                stats["graded"] += 1
+                    except Exception as thread_err:
+                        log.warning(
+                            f"   ⚠️ 스레드 처리 중 오류 (스킵 후 계속): {thread_err}"
+                        )
+                        stats["failed"] += 1
+                        try:
+                            if "search" not in page.url:
+                                back_btn = page.locator(
+                                    'div[aria-label="Back to search"], div[aria-label="검색결과로 돌아가기"], div[act="19"]'
+                                )
+                                if back_btn.count() > 0 and back_btn.first.is_visible():
+                                    back_btn.first.click()
+                                else:
+                                    page.go_back()
+                                page.wait_for_timeout(2000)
+                        except Exception:
+                            pass
 
-                collected.append(
-                    {
-                        "student_info": student_info,
-                        "extracted_sid": extracted_sid,
-                        "sender_name": sender_name,
-                        "sender_email": last_sender_email,
-                        "subject": subject,
-                        "score": score,
-                        "reason_en": reason_en,
-                        "reason_ko": reason_ko,
-                        "date": formatted_date,
-                        "is_replied": is_replied,
-                        "last_msg_body": last_msg_body,
-                        "thread_url": thread_url,
-                    }
+                # 다음 페이지 버튼 확인
+                dismiss_popups(page, log)
+                next_btn = page.locator(
+                    'div[aria-label="Next results"], div[aria-label="Older"], div[aria-label="다음 결과"], div[aria-label="이전 결과"]'
                 )
+                can_go_next = False
+                for b_idx in range(next_btn.count()):
+                    btn = next_btn.nth(b_idx)
+                    if (
+                        btn.is_visible()
+                        and btn.get_attribute("aria-disabled") != "true"
+                    ):
+                        can_go_next = True
+                        log.info(
+                            f"⏩ [페이지 {page_num} 완료] 다음 페이지로 이동합니다..."
+                        )
+                        btn.click()
+                        page.wait_for_timeout(4000)
+                        page_num += 1
+                        break
 
-                back_btn = page.locator(
-                    'div[aria-label="Back to search"], div[aria-label="검색결과로 돌아가기"], div[act="19"]'
-                )
-                if back_btn.count() > 0 and back_btn.first.is_visible():
-                    back_btn.first.click()
-                else:
-                    page.go_back()
-                page.wait_for_timeout(2000)
+                if not can_go_next:
+                    log.info("🏁 마지막 페이지까지 수집 완료.")
+                    break
 
             # Step 3: 중복 제거 (학생별 최고점 유지)
             log.info("\n🚀 [Step 3] 학생별 중복 제거...")
