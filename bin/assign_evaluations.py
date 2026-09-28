@@ -189,13 +189,14 @@ def main():
             )
             f.write("| :--- | :--- | :--- | :--- |\n")
 
-            for eval_student in sorted(submitters, key=lambda x: x["학번"]):
-                eval_id = eval_student["학번"]
-                targets = assignments[eval_id]
+            for eval_student in sorted(submitters, key=lambda x: str(x["학번"])[-3:]):
+                eval_id = str(eval_student["학번"])[-3:]
+                targets = assignments[eval_student["학번"]]
                 row_cells = [f"**{eval_id}**"]
 
                 for t in targets:
-                    row_cells.append(f"[{t['학번']}]({t['url']})")
+                    tid = str(t["학번"])[-3:]
+                    row_cells.append(f"[{tid}]({t['url']})")
 
                 while len(row_cells) < 4:
                     row_cells.append("N/A")
