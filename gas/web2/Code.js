@@ -37,6 +37,7 @@ function onOpen() {
     .addItem('📋 resource 탭 동기화 (1행 보존, 2행부터 복사)', 'syncResourceTab')
     .addItem('🔄 시트 순서 지금 정렬 및 미허용 탭 삭제', 'manualEnforceStructure')
     .addItem('🔒 Q&A 1행 + D열 보호 설정 (학생 수정 차단)', 'protectHeaderAndColumnD')
+    .addItem('🔒 progress 1-4행 + 고정열 보호 설정', 'protectProgressTab')
     .addSeparator()
     .addItem('🔄 score 탭 정렬 (주차↓ 학번↑)', 'sortScoreTab')
     .addToUi();
@@ -375,3 +376,52 @@ function sortScoreTab() {
     `${total}행 (주차 역순 → 학번 오름차순)\nNo 재부여 완료`
   );
 }
+
+/**
+ * progress 탭 표준 보호 설정 (웹 2반)
+ * - 1-4행 (mean, stdev, count, 헤더): 보호
+ * - A-J열 (1-10열): 보호
+ * - K열(wpm04) 이후 학생 입력 영역: 편집 허용
+ */
+function protectProgressTab() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const me = Session.getEffectiveUser();
+  const sheet = ss.getSheetByName("progress");
+
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert('"progress" 탭을 찾을 수 없습니다.');
+    return;
+  }
+
+  // 기존 progress 탭의 보호 범위만 정리
+  const existing = ss.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+  for (const p of existing) {
+    if (p.getRange().getSheet().getName() === "progress") {
+      const desc = p.getDescription();
+      if (desc === "PROGRESS_STATS_AND_HEADER" || desc === "PROGRESS_FIXED_COLS" || desc.includes("progress")) {
+        p.remove();
+      }
+    }
+  }
+
+  // 1. 1-4행 보호 (통계 및 헤더)
+  const headerRange = sheet.getRange(1, 1, 4, sheet.getMaxColumns());
+  const headerProtection = headerRange.protect();
+  headerProtection.setDescription("PROGRESS_STATS_AND_HEADER");
+  headerProtection.removeEditors(headerProtection.getEditors());
+  headerProtection.addEditor(me);
+  if (headerProtection.canDomainEdit()) headerProtection.setDomainEdit(false);
+
+  // 2. A-J열 (1-10열) 보호
+  const fixedColsRange = sheet.getRange(1, 1, sheet.getMaxRows(), 10);
+  const fixedColsProtection = fixedColsRange.protect();
+  fixedColsProtection.setDescription("PROGRESS_FIXED_COLS");
+  fixedColsProtection.removeEditors(fixedColsProtection.getEditors());
+  fixedColsProtection.addEditor(me);
+  if (fixedColsProtection.canDomainEdit()) fixedColsProtection.setDomainEdit(false);
+
+  SpreadsheetApp.getUi().alert(
+    "✅ progress 탭 보호 설정 완료\n- 1-4행 (통계/헤더): 보호\n- A-J열 (고정 정보): 보호\n- K열 이후: 학생 입력 허용"
+  );
+}
+
