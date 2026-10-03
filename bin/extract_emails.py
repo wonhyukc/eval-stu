@@ -239,7 +239,11 @@ def send_single_reply(page, item: dict, task_id: str, id_to_names: dict) -> bool
     """단일 학생 메일 검색 → 스레드 진입 → 답장 작성 및 발송."""
     from urllib.parse import quote
 
-    sid = item["학번"]
+    sid = str(item.get("학번", "")).strip()
+    if not sid:
+        print("      ⏭️ 학번 식별 불가 (답장 발송 스킵)")
+        return False
+
     target_q = f"{sid} {task_id}"
     url = f"https://mail.google.com/mail/u/0/#search/{quote(target_q)}"
 
@@ -596,7 +600,13 @@ def extract_gmail_interactive(
                             or sender_loc.nth(s_idx).inner_text()
                         )
                         s_lower = s_candidate.lower()
-                        if "me" in s_lower or "wonhyukc@stu.ac.kr" in s_lower:
+                        if (
+                            "me" in s_lower
+                            or "wonhyukc@stu.ac.kr" in s_lower
+                            or s_candidate.strip() == "나"
+                            or ", 나" in s_candidate
+                            or "나," in s_candidate
+                        ):
                             has_instructor_reply = True
                         elif not sender:
                             sender = s_candidate
@@ -607,6 +617,15 @@ def extract_gmail_interactive(
                         )
                 else:
                     sender = ""
+
+                # 추가 방어: div.yW 발신자 영역 전체 텍스트에서 '나' 또는 'me' 검사
+                yw_loc = row.locator("div.yW")
+                if yw_loc.count() > 0:
+                    yw_text = yw_loc.first.inner_text()
+                    if re.search(
+                        r"(?:^|[,\s])(?:나|me)(?:[,\s]|$)", yw_text, re.IGNORECASE
+                    ):
+                        has_instructor_reply = True
 
                 date_loc = row.locator("td.xW span")
                 date_str = (
@@ -892,8 +911,14 @@ def extract_gmail_interactive(
                 )
                 current_task_str = f"0.{target_week}" if target_week else "과제"
                 for idx, item in enumerate(unreplied_items):
-                    sid = item["학번"]
+                    sid = str(item.get("학번", "")).strip()
                     sname = item.get("이름", "")
+                    sub_title = item.get("메일제목", "")
+                    if not sid:
+                        print(
+                            f" -> [{idx+1}/{len(unreplied_items)}] ⏭️ 학번 식별 불가 메일 (발송 스킵): {sname} | {sub_title}"
+                        )
+                        continue
                     print(
                         f" -> [{idx+1}/{len(unreplied_items)}] 답장 발송 시도: {sid} ({sname})"
                     )
@@ -1142,7 +1167,13 @@ def run_all_grading_interactive():
                                 or sender_loc.nth(s_idx).inner_text()
                             )
                             s_lower = s_candidate.lower()
-                            if "me" in s_lower or "wonhyukc@stu.ac.kr" in s_lower:
+                            if (
+                                "me" in s_lower
+                                or "wonhyukc@stu.ac.kr" in s_lower
+                                or s_candidate.strip() == "나"
+                                or ", 나" in s_candidate
+                                or "나," in s_candidate
+                            ):
                                 has_instructor_reply = True
                             elif not sender:
                                 sender = s_candidate
@@ -1153,6 +1184,15 @@ def run_all_grading_interactive():
                             )
                     else:
                         sender = ""
+
+                    # 추가 방어: div.yW 발신자 영역 전체 텍스트에서 '나' 또는 'me' 검사
+                    yw_loc = row.locator("div.yW")
+                    if yw_loc.count() > 0:
+                        yw_text = yw_loc.first.inner_text()
+                        if re.search(
+                            r"(?:^|[,\s])(?:나|me)(?:[,\s]|$)", yw_text, re.IGNORECASE
+                        ):
+                            has_instructor_reply = True
 
                     date_loc = row.locator("td.xW span")
                     date_str = (
