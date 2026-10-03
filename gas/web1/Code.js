@@ -202,12 +202,7 @@ function autoSortScoreTabSilent() {
   ]);
 
   const total = lastRow - 1;
-  const noValues = [];
-  for (let i = 0; i < total; i++) {
-    noValues.push([total - i]);
-  }
-  sheet.getRange(2, 1, total, 1).setValues(noValues);
-  console.log(`[자동 정렬] score 탭 ${total}행 정렬 완료`);
+  console.log(`[자동 정렬] score 탭 ${total}행 정렬 완료 (원래 No 값 유지)`);
 }
 
 /**
@@ -419,15 +414,9 @@ function sortScoreTab() {
   ]);
 
   const total = lastRow - 1;
-  const noValues = [];
-  for (let i = 0; i < total; i++) {
-    noValues.push([total - i]);
-  }
-  sheet.getRange(2, 1, total, 1).setValues(noValues);
-
   SpreadsheetApp.getUi().alert(
     "✅ score 탭 정렬 완료\n" +
-    `${total}행 (주차 역순 → 학번 오름차순)\nNo 재부여 완료`
+    `${total}행 (주차 역순 → 학번 오름차순)\n원래 No 번호 유지`
   );
 }
 
