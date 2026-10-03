@@ -14,7 +14,7 @@ base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if base_dir not in sys.path:
     sys.path.append(base_dir)
 
-from modules.sheet_updater import normalize_track
+from modules.sheet_updater import normalize_track, format_date_to_mmdd_hhmm
 
 KST = timezone(timedelta(hours=9))
 
@@ -881,14 +881,20 @@ def extract_gmail_interactive(
                     print(f" -> 과제 아님 무시: {est_id} ({sender}) | {subject}")
                     continue
 
+            formatted_date = (
+                email_dt.strftime("%m/%d %H:%M")
+                if email_dt
+                else format_date_to_mmdd_hhmm(date_str)
+            )
+
             row_data = {
                 "학번": est_id,
                 "추정하는학번": est_id,
                 "track": track_val,
-                "점수": score,
+                "점수": float(score),
                 "유형": task_type,
                 "이유": reason,
-                "날짜": date_str,
+                "날짜": formatted_date,
                 "이름": sender,
                 "메일제목": subject,
                 "is_replied": bool(has_thread_reply),

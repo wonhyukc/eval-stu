@@ -87,8 +87,10 @@ def get_max_no(service, spreadsheet_id, sheet_title):
         values = result.get("values", [])
         max_no = 0
         for row in values:
-            if row and str(row[0]).isdigit():
-                max_no = max(max_no, int(row[0]))
+            if row:
+                clean_no = str(row[0]).replace("'", "").strip()
+                if clean_no.isdigit():
+                    max_no = max(max_no, int(clean_no))
         return max_no
     except Exception as e:
         print(f"⚠️ 일련번호(no) 조회 실패. 기본값 0 사용: {e}")
@@ -119,6 +121,15 @@ def normalize_row_to_11cols(row):
             return [no, wk, sid, track, score, "hw", ctype, reason, dt, name, subj]
         return list(row) + [""] * (11 - len(row))
     return list(row)
+
+
+def make_scaled_score_formula(row_num: int) -> str:
+    """주어진 행 번호에 대한 M열(Scaled Score) 수식을 생성합니다."""
+    return (
+        f'=IF(G{row_num}="lab", '
+        f"IF(B{row_num}=3, ROUND((E{row_num}/9)*3, 2), ROUND((E{row_num}/10)*3, 2)), "
+        f"E{row_num})"
+    )
 
 
 TRACK_NORMALIZATION_MAP = {
@@ -163,6 +174,169 @@ def normalize_track(track_raw: Any) -> str:
     if clean.startswith("2"):
         return "2"
     return clean
+
+
+def format_date_to_mmdd_hhmm(date_val: Any) -> str:
+    """날짜 문자열을 'mm/dd hh:mm' (예: '09/30 20:15') 형식으로 변환."""
+    if not date_val:
+        return ""
+
+    s = str(date_val).strip()
+    if not s:
+        return ""
+
+    # 1. 이미 mm/dd hh:mm 형식인 경우 (예: '09/30 20:15' 또는 '9/30 20:15')
+    m_direct = re.match(r"^(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})$", s)
+    if m_direct:
+        m, d, h, mn = m_direct.groups()
+        return f"{int(m):02d}/{int(d):02d} {int(h):02d}:{mn}"
+
+    clean_s = s.replace("\u202f", " ").replace("\xa0", " ").strip()
+
+    # 2. Gmail 영문 날짜 형태: 'Wed, Sep 30, 2026, 8:15 PM' or 'Sep 30, 2026, 8:15 PM'
+    months = {
+        "jan": 1,
+        "feb": 2,
+        "mar": 3,
+        "apr": 4,
+        "may": 5,
+        "jun": 6,
+        "jul": 7,
+        "aug": 8,
+        "sep": 9,
+        "oct": 10,
+        "nov": 11,
+        "dec": 12,
+    }
+    m_gmail = re.search(
+        r"([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{4}),?\s+(\d{1,2}):(\d{2})\s*(AM|PM)?",
+        clean_s,
+        re.IGNORECASE,
+    )
+    if m_gmail:
+        mon_str, day_str, _, hr_str, min_str, ampm = m_gmail.groups()
+        mon = months.get(mon_str.lower()[:3])
+        if mon:
+            hr = int(hr_str)
+            if ampm:
+                if ampm.upper() == "PM" and hr < 12:
+                    hr += 12
+                elif ampm.upper() == "AM" and hr == 12:
+                    hr = 0
+            return f"{mon:02d}/{int(day_str):02d} {hr:02d}:{min_str}"
+
+    # 3. email.utils 표준 파싱 (예: 'Thu, 1 Oct 2026 12:10:00 +0900')
+    import email.utils
+    from datetime import timezone, timedelta
+
+    kst = timezone(timedelta(hours=9))
+    try:
+        dt = email.utils.parsedate_to_datetime(clean_s)
+        if dt:
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=kst)
+            else:
+                dt = dt.astimezone(kst)
+            return dt.strftime("%m/%d %H:%M")
+    except Exception:
+        pass
+
+    # 4. 한국어 형태: '2026. 10. 1. 오후 8:15'
+    m_ko = re.search(
+        r"(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.?\s*(오전|오후)?\s*(\d{1,2}):(\d{2})",
+        clean_s,
+    )
+    if m_ko:
+        _, mon_k, day_k, ampm_k, hr_k, mn_k = m_ko.groups()
+        h_k = int(hr_k)
+        if ampm_k == "오후" and h_k < 12:
+            h_k += 12
+        elif ampm_k == "오전" and h_k == 12:
+            h_k = 0
+        return f"{int(mon_k):02d}/{int(day_k):02d} {h_k:02d}:{mn_k}"
+
+    # 5. ISO 형태: '2026-10-01 18:06:00'
+    m_iso = re.search(
+        r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s]+(\d{1,2}):(\d{2}))?",
+        clean_s,
+    )
+    if m_iso:
+        _, mon_i, day_i, hr_i, mn_i = m_iso.groups()
+        if hr_i and mn_i:
+            return f"{int(mon_i):02d}/{int(day_i):02d} {int(hr_i):02d}:{mn_i}"
+        return f"{int(mon_i):02d}/{int(day_i):02d}"
+
+    # 6. 월/일만 있는 경우: '9/25'
+    m_md = re.match(r"^(\d{1,2})/(\d{1,2})$", clean_s)
+    if m_md:
+        return f"{int(m_md.group(1)):02d}/{int(m_md.group(2)):02d}"
+
+    return s
+
+
+def apply_score_sheet_formatting(service, spreadsheet_id: str, sheet_id: int) -> None:
+    """Score(D열) 및 Scaled Score(M열) 우측 정렬, Date(I열) 왼쪽 정렬 서식 적용."""
+    requests = [
+        # D열 (Score, col index 3) 우측 정렬 및 숫자 서식
+        {
+            "repeatCell": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": 1,
+                    "startColumnIndex": 3,
+                    "endColumnIndex": 4,
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "horizontalAlignment": "RIGHT",
+                        "numberFormat": {"type": "NUMBER", "pattern": "0.00"},
+                    }
+                },
+                "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.numberFormat",
+            }
+        },
+        # M열 (Scaled Score, col index 12) 우측 정렬 및 숫자 서식 (소수점 2자리)
+        {
+            "repeatCell": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": 1,
+                    "startColumnIndex": 12,
+                    "endColumnIndex": 13,
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "horizontalAlignment": "RIGHT",
+                        "numberFormat": {"type": "NUMBER", "pattern": "0.00"},
+                    }
+                },
+                "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.numberFormat",
+            }
+        },
+        # I열 (Date, col index 8) 왼쪽 정렬
+        {
+            "repeatCell": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": 1,
+                    "startColumnIndex": 8,
+                    "endColumnIndex": 9,
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "horizontalAlignment": "LEFT",
+                    }
+                },
+                "fields": "userEnteredFormat.horizontalAlignment",
+            }
+        },
+    ]
+    try:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id, body={"requests": requests}
+        ).execute()
+    except Exception as e:
+        print(f"ℹ️ 시트 서식 적용 건너뜀 (권한 또는 API 제한): {e}")
 
 
 def route_web_rows(rows_data):
@@ -435,7 +609,7 @@ def translate_reason_to_ko(reason: str) -> str:
     return raw
 
 
-def sort_sheet_rows(rows_data, renumber_desc=True):
+def sort_sheet_rows(rows_data, renumber_desc=False):
     """
     11열 성적 데이터를 4단계 표준 정렬 순서로 정렬합니다:
     1차: week 역순 (descending)
@@ -443,7 +617,7 @@ def sort_sheet_rows(rows_data, renumber_desc=True):
     3차: Type2 오름차순 (ascending)
     4차: ID 오름차순 (ascending)
 
-    renumber_desc=True인 경우 No를 맨 위(최신)부터 N down to 1로 재부여합니다.
+    ⚠️ No(A열)는 고유 식별 번호이므로 기본적으로 정렬 시 재부여하지 않고 원본 값을 보존합니다.
     """
     normalized = [normalize_row_to_11cols(r) for r in rows_data]
 
@@ -485,10 +659,16 @@ def sort_sheet_rows(rows_data, renumber_desc=True):
 
 
 def sort_sheet_remote(course="py"):
-    """구글 시트에서 데이터를 읽어 정렬한 뒤 덮어쓴다.
+    """구글 시트 네이티브 sortRange API를 호출하여 시트 데이터를 정렬한다.
 
-    정렬 기준: 1차 주차 역순 → 2차 Type1 → 3차 Type2 → 4차 학번 오름차순
-    No는 맨 위부터 N down to 1로 재부여.
+    정렬 기준:
+      1차 주차(B열, col 1) 역순
+      2차 Type1(F열, col 5) 오름차순
+      3차 Type2(G열, col 6) 오름차순
+      4차 학번(C열, col 2) 오름차순
+
+    ⚠️ A열(No)을 포함한 전체 행이 원자적으로 이동하므로,
+       기존 번호(No) 및 수식(M열)이 절대 훼손되거나 덮어써지지 않고 100% 보존됩니다.
     """
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config = load_course_config(base_dir, course)
@@ -508,73 +688,34 @@ def sort_sheet_remote(course="py"):
         print(f"❌ 오류: gid={target_gid} 시트를 찾을 수 없음")
         return False
 
-    # 1) 시트에서 전체 데이터 읽기 (A:L 12열, 이의제기 결과 컬럼 포함)
-    range_name = f"{sheet_title}!A:L"
-    result = (
-        service.spreadsheets()
-        .values()
-        .get(spreadsheetId=spreadsheet_id, range=range_name)
-        .execute()
-    )
-    all_rows = result.get("values", [])
-    if len(all_rows) < 2:
-        print("⚠️ 정렬할 데이터가 없습니다.")
+    sort_request = {
+        "sortRange": {
+            "range": {
+                "sheetId": target_gid,
+                "startRowIndex": 1,  # 헤더(1행) 제외
+                "startColumnIndex": 0,  # A열부터 전체 컬럼
+            },
+            "sortSpecs": [
+                {"dimensionIndex": 1, "sortOrder": "DESCENDING"},  # wk (B열)
+                {"dimensionIndex": 5, "sortOrder": "ASCENDING"},  # Type1 (F열)
+                {"dimensionIndex": 6, "sortOrder": "ASCENDING"},  # Type2 (G열)
+                {"dimensionIndex": 2, "sortOrder": "ASCENDING"},  # ID (C열)
+            ],
+        }
+    }
+
+    try:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={"requests": [sort_request]},
+        ).execute()
+        print(
+            f"✅ {sheet_title} 네이티브 정렬 완료 (주차 역순 → 학번 오름차순, 원본 No 보존)"
+        )
+        return True
+    except Exception as e:
+        print(f"❌ {sheet_title} 정렬 실패: {e}")
         return False
-
-    header = all_rows[0]
-    data_rows = all_rows[1:]
-    print(f"📊 {sheet_title}: {len(data_rows)}행 읽기 완료")
-
-    # 12열로 패딩 (짧은 행 보정)
-    for row in data_rows:
-        while len(row) < 12:
-            row.append("")
-
-    # 2) 주차(B열) 빈 셀 → 유형2(G열, 인덱스 6)에서 추출하여 채우기
-    for row in data_rows:
-        wk_val = str(row[1]).strip()
-        if not wk_val:
-            type2 = str(row[6]).replace("과제", "").replace("'", "").strip()
-            m = re.search(r"0\.(\d+)", type2)
-            if m:
-                row[1] = m.group(1)
-
-    # 3) 정렬 (11열 기준, 12열째는 보존)
-    extra_col = [row[11] for row in data_rows]
-    sorted_rows = sort_sheet_rows([row[:11] for row in data_rows], renumber_desc=True)
-
-    # 4) 주차를 숫자로, 학번을 끝3자리 텍스트로 정규화 + 12열 복원
-    for i, row in enumerate(sorted_rows):
-        if len(row) > 1 and row[1]:
-            try:
-                row[1] = int(str(row[1]).strip().replace("'", ""))
-            except ValueError:
-                pass
-        if len(row) > 2 and row[2]:
-            clean_id = str(row[2]).lstrip("'").strip()
-            last3 = clean_id[-3:] if len(clean_id) >= 3 else clean_id
-            row[2] = f"'{last3}"
-        if len(row) > 3 and row[3]:
-            row[3] = normalize_track(row[3])
-        row.append(extra_col[i] if i < len(extra_col) else "")
-
-    # 5) 시트에 덮어쓰기 (헤더 + 정렬된 데이터, A:L)
-    # 헤더도 12열로 패딩
-    while len(header) < 12:
-        header.append("")
-    write_range = f"{sheet_title}!A1:L{len(sorted_rows) + 1}"
-    body = {"values": [header] + sorted_rows}
-    service.spreadsheets().values().update(
-        spreadsheetId=spreadsheet_id,
-        range=write_range,
-        valueInputOption="USER_ENTERED",
-        body=body,
-    ).execute()
-
-    print(
-        f"✅ {sheet_title} 정렬 완료: {len(sorted_rows)}행 (주차 역순 → 학번 오름차순)"
-    )
-    return True
 
 
 def append_grades_to_sheet(rows_data, course="py"):
@@ -754,8 +895,8 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         print(f"❌ 오류: 시트 ID(gid={target_gid})를 찾을 수 없습니다.")
         return False
 
-    # 기존 시트의 전체 데이터 읽기 (2행부터 A~K)
-    range_all = f"{sheet_title}!A2:K"
+    # 기존 시트의 전체 데이터 읽기 (2행부터 A~M)
+    range_all = f"{sheet_title}!A2:M"
     try:
         res = (
             service.spreadsheets()
@@ -767,6 +908,31 @@ def upsert_grades_to_sheet(rows_data, course="py"):
     except Exception as e:
         print(f"⚠️ 기존 데이터 조회 실패: {e}")
         existing_rows = []
+
+    # 기존 행 중 M열(Scaled Score) 수식이 비어 있는 행 일괄 보정
+    missing_m_updates = []
+    for idx, r in enumerate(existing_rows):
+        r_num = idx + 2
+        if len(r) > 1 and str(r[1]).strip():
+            if len(r) <= 12 or not str(r[12]).strip():
+                formula = make_scaled_score_formula(r_num)
+                missing_m_updates.append(
+                    {"range": f"{sheet_title}!M{r_num}", "values": [[formula]]}
+                )
+    if missing_m_updates:
+        try:
+            service.spreadsheets().values().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={
+                    "valueInputOption": "USER_ENTERED",
+                    "data": missing_m_updates,
+                },
+            ).execute()
+            print(
+                f"🔧 M열(Scaled Score) 수식 누락 {len(missing_m_updates)}개 행 자동 보정 완료"
+            )
+        except Exception as e:
+            print(f"⚠️ M열 수식 자동 보정 실패: {e}")
 
     # 기존 데이터 인덱싱: (student_id_last3, type1, type2) -> row_number (idx + 2)
     # ⚠️ 학번은 반드시 끝 3자리로 정규화하여 비교해야 함.
@@ -839,7 +1005,7 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         # 점수 스케일 환산:
         # - 실습 과제(lab): score 탭에는 루브릭 만점 점수(원점수: 9점, 10점 등) 그대로 기록
         # - 이메일 과제(hw) 및 기타: 1.0점 만점 스케일 적용 (SSOT 정책 준수)
-        if len(row) > 4 and row[4]:
+        if len(row) > 4 and row[4] != "":
             t1_val = str(row[5]).strip().lower() if len(row) > 5 and row[5] else ""
             t2_val = str(row[6]).strip().lower() if len(row) > 6 and row[6] else ""
             if (
@@ -851,6 +1017,16 @@ def upsert_grades_to_sheet(rows_data, course="py"):
                 pass
             else:
                 row[4] = convert_score_to_1scale(str(row[4]))
+            # 숫자는 float로 변환하여 구글 시트 숫자 인식 및 우측 정렬 보장
+            try:
+                row[4] = float(row[4])
+            except (ValueError, TypeError):
+                pass
+
+        # Date 포맷팅 (인덱스 8): mm/dd hh:mm 형식 보장
+        if len(row) > 8 and row[8]:
+            row[8] = format_date_to_mmdd_hhmm(row[8])
+
         # 사유 SSOT 정규화: 2점 스케일 사유 → 표준 사유 (언어 변환 전에 적용)
         if len(row) > 7 and row[7]:
             row[7] = normalize_reason_to_ssot(str(row[7]))
@@ -863,39 +1039,55 @@ def upsert_grades_to_sheet(rows_data, course="py"):
 
         key = (sid_key, t1, clean_type2)
 
+        while len(row) < 11:
+            row.append("")
+
         if key in key_to_row_num:
-            # 기존 행 갱신 (No는 기존 행의 No 유지)
+            # 기존 행 갱신 (No는 기존 행의 No 유지, L/M열 유지 또는 보정)
             existing_row_num = key_to_row_num[key]
             existing_row_idx = existing_row_num - 2
+            existing_data = (
+                existing_rows[existing_row_idx]
+                if 0 <= existing_row_idx < len(existing_rows)
+                else []
+            )
             existing_no = (
-                existing_rows[existing_row_idx][0]
-                if (
-                    existing_row_idx < len(existing_rows)
-                    and len(existing_rows[existing_row_idx]) > 0
-                )
+                existing_data[0]
+                if len(existing_data) > 0 and existing_data[0] != ""
                 else row[0]
             )
+            existing_appeal = existing_data[11] if len(existing_data) > 11 else ""
+            existing_scaled = (
+                existing_data[12]
+                if len(existing_data) > 12 and str(existing_data[12]).strip()
+                else make_scaled_score_formula(existing_row_num)
+            )
+
             row[0] = existing_no
-            rows_to_update.append((existing_row_num, row))
+            row_13 = row[:11] + [existing_appeal, existing_scaled]
+            rows_to_update.append((existing_row_num, row_13))
         else:
-            # 신규 추가
+            # 신규 추가 (13열 구조: L열 빈칸, M열 수식 자동 주입)
             max_no += 1
             row[0] = max_no
-            rows_to_append.append(row)
+            new_append_row_num = len(existing_rows) + 2 + len(rows_to_append)
+            formula = make_scaled_score_formula(new_append_row_num)
+            row_13 = row[:11] + ["", formula]
+            rows_to_append.append(row_13)
             # ⚠️ 같은 배치 내에서도 중복 방지: 신규 추가 키를 즉시 등록
             key_to_row_num[key] = -1  # sentinel (append이므로 row_num은 불확정)
 
     success = True
 
-    # 1. 기존 행 멱등 갱신 (Update)
-    for row_num, row in rows_to_update:
+    # 1. 기존 행 멱등 갱신 (Update: A~M)
+    for row_num, row_data_13 in rows_to_update:
         try:
-            update_range = f"{sheet_title}!A{row_num}:K{row_num}"
+            update_range = f"{sheet_title}!A{row_num}:M{row_num}"
             service.spreadsheets().values().update(
                 spreadsheetId=spreadsheet_id,
                 range=update_range,
                 valueInputOption="USER_ENTERED",
-                body={"values": [row]},
+                body={"values": [row_data_13]},
             ).execute()
         except Exception as e:
             print(f"⚠️ 행 {row_num} 갱신 실패: {e}")
@@ -904,12 +1096,12 @@ def upsert_grades_to_sheet(rows_data, course="py"):
     if rows_to_update:
         print(f"🔄 멱등 갱신 완료: {len(rows_to_update)}개 기존 행 업데이트됨")
 
-    # 2. 신규 행 추가 (Append)
+    # 2. 신규 행 추가 (Append: A~M)
     if rows_to_append:
         try:
             service.spreadsheets().values().append(
                 spreadsheetId=spreadsheet_id,
-                range=f"{sheet_title}!A:K",
+                range=f"{sheet_title}!A:M",
                 valueInputOption="USER_ENTERED",
                 insertDataOption="INSERT_ROWS",
                 body={"values": rows_to_append},
@@ -926,5 +1118,9 @@ def upsert_grades_to_sheet(rows_data, course="py"):
             sort_sheet_remote(course=course)
         except Exception as e:
             print(f"⚠️ 자동 정렬 실패 (데이터는 정상 기록됨): {e}")
+
+    # 4. 시트 서식 적용 (Score/Scaled Score 우측 정렬, Date 왼쪽 정렬)
+    if success:
+        apply_score_sheet_formatting(service, spreadsheet_id, target_gid)
 
     return success

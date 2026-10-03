@@ -110,23 +110,15 @@ def test_sort_sheet_rows_4level():
         ["3", "3", "741", "1", "1", "hw", "0.3", "Pass", "9/17", "C", "S3"],
         ["4", "2", "741", "1", "1", "class", "", "Pass", "9/14", "D", "S4"],
     ]
+    # 기본 동작: No 원본 유지
+    sorted_default = sort_sheet_rows(raw_data)
+    assert sorted_default[0][0] == "3"  # 3주차 741의 원래 No는 3
+    assert sorted_default[1][0] == "2"  # 3주차 742의 원래 No는 2
+    assert sorted_default[2][0] == "4"  # 2주차 class 741의 원래 No는 4
+    assert sorted_default[3][0] == "1"  # 2주차 hw 890의 원래 No는 1
+
+    # 명시적 renumber_desc=True인 경우만 재부여
     sorted_res = sort_sheet_rows(raw_data, renumber_desc=True)
-
-    # 1. 3주차가 2주차보다 위
-    assert sorted_res[0][1] == "3"
-    assert sorted_res[1][1] == "3"
-    assert sorted_res[2][1] == "2"
-    assert sorted_res[3][1] == "2"
-
-    # 2. 3주차 내에서 741이 742보다 위 (학번 오름차순)
-    assert sorted_res[0][2] == "741"
-    assert sorted_res[1][2] == "742"
-
-    # 3. 2주차 내에서 class가 hw보다 위 (Type1 오름차순)
-    assert sorted_res[2][5] == "class"
-    assert sorted_res[3][5] == "hw"
-
-    # 4. No 번호가 내림차순(4 down to 1)으로 재부여
     assert sorted_res[0][0] == "4"
     assert sorted_res[1][0] == "3"
     assert sorted_res[2][0] == "2"
@@ -296,3 +288,40 @@ def test_convert_lab_score_to_3scale():
     # 이미 3.0 스케일인 경우 (denom <= 3.0)
     assert convert_lab_score_to_3scale("3.0", max_score=3.0) == "3.0"
     assert convert_lab_score_to_3scale("2.5", max_score=3.0) == "2.5"
+
+
+def test_format_date_to_mmdd_hhmm():
+    from modules.sheet_updater import format_date_to_mmdd_hhmm
+
+    # Gmail 영문 형태
+    assert format_date_to_mmdd_hhmm("Wed, Sep 30, 2026, 8:15 PM") == "09/30 20:15"
+    assert format_date_to_mmdd_hhmm("Thu, Oct 1, 2026, 12:08 AM") == "10/01 00:08"
+    assert format_date_to_mmdd_hhmm("Thu, Oct 1, 2026, 12:38 PM") == "10/01 12:38"
+    assert format_date_to_mmdd_hhmm("Fri, Oct 2, 2026, 11:02 AM") == "10/02 11:02"
+
+    # 이미 mm/dd hh:mm 형태
+    assert format_date_to_mmdd_hhmm("09/30 20:15") == "09/30 20:15"
+    assert format_date_to_mmdd_hhmm("9/30 8:15") == "09/30 08:15"
+
+    # 한국어 형태
+    assert format_date_to_mmdd_hhmm("2026. 10. 1. 오후 8:15") == "10/01 20:15"
+
+    # 월/일 형태
+    assert format_date_to_mmdd_hhmm("9/25") == "09/25"
+    assert format_date_to_mmdd_hhmm("09/25") == "09/25"
+
+
+def test_make_scaled_score_formula():
+    from modules.sheet_updater import make_scaled_score_formula
+
+    formula_172 = make_scaled_score_formula(172)
+    assert (
+        formula_172
+        == '=IF(G172="lab", IF(B172=3, ROUND((E172/9)*3, 2), ROUND((E172/10)*3, 2)), E172)'
+    )
+
+    formula_193 = make_scaled_score_formula(193)
+    assert (
+        formula_193
+        == '=IF(G193="lab", IF(B193=3, ROUND((E193/9)*3, 2), ROUND((E193/10)*3, 2)), E193)'
+    )
