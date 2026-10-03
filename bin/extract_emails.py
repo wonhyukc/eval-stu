@@ -158,8 +158,154 @@ def _upload_rows_to_sheet(data_to_append):
         upsert_grades_to_sheet(web_rows, course="web")
 
 
-def print_grading_summary(rows):
-    """채점 결과를 반별 1.0점 만점 5단계 티어로 집계하여 표로 출력."""
+def build_reply_body(row: dict, task_id: str, id_to_names: dict) -> str:
+    """트랙별 언어 정책(E트랙 100% 영어, K트랙 100% 한글)에 맞는 답장 본문 생성."""
+    track_val = normalize_track(str(row.get("track", "")))
+    score = float(row.get("점수", 0.0))
+    reason = str(row.get("이유", ""))
+    sid = str(row.get("학번", ""))
+    name_info = id_to_names.get(sid, {})
+    eng_name = name_info.get("eng", str(row.get("이름", "Student")))
+    kor_name = name_info.get("kor", eng_name)
+
+    is_web = track_val in ["1", "2"]
+
+    if not is_web:
+        # K트랙 100% 한글
+        name = kor_name or eng_name
+        if score >= 0.9:
+            return (
+                f"안녕하세요 {name} 학생,\n\n"
+                f"{task_id} 과제 이메일이 정상적으로 접수 및 채점되었습니다.\n"
+                f"- 과제: {task_id}\n"
+                f"- 점수: {score:.1f} / 1.0\n"
+                f"- 상태: {reason}\n\n"
+                f"수고 많으셨습니다.\n"
+                f"정원혁 드림"
+            )
+        elif score > 0.0:
+            return (
+                f"안녕하세요 {name} 학생,\n\n"
+                f"제출하신 {task_id} 과제 이메일을 확인하였습니다.\n"
+                f"- 과제: {task_id}\n"
+                f"- 점수: {score:.1f} / 1.0\n"
+                f"- 사유: {reason}\n\n"
+                f"규정에 맞춰 다음 과제 제출 시 유의해 주시기 바랍니다.\n"
+                f"정원혁 드림"
+            )
+        else:
+            return (
+                f"안녕하세요 {name} 학생,\n\n"
+                f"제출하신 이메일의 본문 내용이 확인되지 않아 정상 채점되지 않았습니다 (0.0점).\n"
+                f"과제 내용 및 결과를 본문에 포함하여 다시 제출해 주시기 바랍니다.\n\n"
+                f"정원혁 드림"
+            )
+    else:
+        # E트랙 100% 영문
+        name = eng_name
+        if score >= 0.9:
+            return (
+                f"Dear {name},\n\n"
+                f"Your assignment submission has been received and graded successfully.\n"
+                f"- Task: {task_id}\n"
+                f"- Score: {score:.1f} / 1.0\n"
+                f"- Status: {reason}\n\n"
+                f"Thank you for your submission.\n"
+                f"Best regards,\n"
+                f"Wonhyuk William Chung"
+            )
+        elif score > 0.0:
+            return (
+                f"Dear {name},\n\n"
+                f"Your assignment submission has been reviewed:\n"
+                f"- Task: {task_id}\n"
+                f"- Score: {score:.1f} / 1.0\n"
+                f"- Note: {reason}\n\n"
+                f"Please make sure to follow the required format and deadline for future assignments.\n"
+                f"Best regards,\n"
+                f"Wonhyuk William Chung"
+            )
+        else:
+            return (
+                f"Dear {name},\n\n"
+                f"We could not verify the content of your assignment in the email body (Score: 0.0).\n"
+                f"Please re-submit your assignment with the actual content/links included in the body text.\n\n"
+                f"Best regards,\n"
+                f"Wonhyuk William Chung"
+            )
+
+
+def send_single_reply(page, item: dict, task_id: str, id_to_names: dict) -> bool:
+    """단일 학생 메일 검색 → 스레드 진입 → 답장 작성 및 발송."""
+    from urllib.parse import quote
+
+    sid = item["학번"]
+    target_q = f"{sid} {task_id}"
+    url = f"https://mail.google.com/mail/u/0/#search/{quote(target_q)}"
+
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(2500)
+
+        rows = page.locator("tr.zA:visible")
+        if rows.count() == 0:
+            # 폴백: 학번 단독 검색
+            url_fb = f"https://mail.google.com/mail/u/0/#search/{quote(sid)}"
+            page.goto(url_fb, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(2500)
+            rows = page.locator("tr.zA:visible")
+
+        if rows.count() == 0:
+            print(f"      ❌ 답장 대상 메일을 찾을 수 없음: {sid}")
+            return False
+
+        # 첫 번째 가시 행 클릭 진입
+        rows.first.click(timeout=10000)
+        page.wait_for_timeout(2000)
+
+        # 이미 교수 답장이 있는지 재확인 (이중 안전장치)
+        sender_spans = page.locator("span.gD")
+        for s_idx in range(sender_spans.count()):
+            s_email = sender_spans.nth(s_idx).get_attribute("email") or ""
+            if "wonhyukc@stu.ac.kr" in s_email.lower():
+                print(f"      ⏭️ 이미 답장된 스레드 확인됨 (중복 방지 스킵): {sid}")
+                return True
+
+        reply_body = build_reply_body(item, task_id, id_to_names)
+
+        reply_btn = page.locator(
+            'span[role="link"]:has-text("Reply"), span[role="link"]:has-text("답장"), '
+            'div[aria-label*="Reply"], div[aria-label*="답장"], '
+            'div[data-tooltip*="Reply"], div[data-tooltip*="답장"]'
+        )
+        if reply_btn.count() > 0 and reply_btn.first.is_visible():
+            reply_btn.first.click()
+        else:
+            page.keyboard.press("r")
+        page.wait_for_timeout(1500)
+
+        textbox = page.locator(
+            'div[role="textbox"][aria-label*="Message Body"], '
+            'div[role="textbox"][aria-label*="본문"], '
+            'div[role="textbox"]:visible'
+        )
+        if textbox.count() > 0:
+            textbox.first.fill(reply_body)
+            page.wait_for_timeout(1000)
+            page.keyboard.press("Control+Enter")
+            page.wait_for_timeout(2500)
+            print(f"      ✅ 답장 발송 성공! ({sid})")
+            return True
+        else:
+            print(f"      ❌ 답장 입력창을 찾을 수 없음: {sid}")
+            return False
+    except Exception as e:
+        print(f"      ❌ 답장 처리 중 오류 ({sid}): {e}")
+        return False
+
+
+def print_grading_summary(rows, reply_stats=None):
+    """채점 결과를 반별 1.0점 만점 5단계 티어로 집계하고 답장 통계와 함께 출력."""
     if not rows:
         return
 
@@ -244,6 +390,19 @@ def print_grading_summary(rows):
         stats[cls_key][tier] += 1
         stats[cls_key]["total"] += 1
 
+    total_sub = len(rows)
+    already = sum(1 for r in rows if r.get("is_replied"))
+    newly = 0
+    unrep = total_sub - already
+
+    if reply_stats:
+        already = reply_stats.get("already_replied", already)
+        newly = reply_stats.get("newly_replied", 0)
+        unrep = reply_stats.get("unreplied", max(0, total_sub - (already + newly)))
+
+    total_r = already + newly
+    pct = (total_r / total_sub * 100) if total_sub > 0 else 0.0
+
     print("\n" + "=" * 65)
     print("📊 [채점 결과 요약]")
     print("-" * 65)
@@ -261,6 +420,11 @@ def print_grading_summary(rows):
         print(
             f"{c:<2} | {t:^8} | {s1:^4} | {s09:^5} | {s07:^5} | {s05:^5} | {s02:^5} | {s0:^3}"
         )
+    print("-" * 65)
+    print("✉️ [답장 현황]")
+    print(f"• 총 답장 건수   : {total_r}건 (전체 제출 {total_sub}건 중 {pct:.1f}%)")
+    print(f"• 이미 답장 완료 : {already}건")
+    print(f"• 이번에 답장 완료: {newly}건 (미답장 잔여: {unrep}건)")
     print("=" * 65 + "\n")
 
 
@@ -306,8 +470,11 @@ def extract_gmail_interactive(
     target_week=None,
     allowed_tracks=None,
     track_names=None,
+    target_id=None,
     require_attachment=False,
     skip_sheet=False,
+    do_reply=False,
+    do_sync=False,
 ):
     print("Loading student roster...")
     name_to_id, id_to_track, id_to_names = parse_students()
@@ -530,6 +697,12 @@ def extract_gmail_interactive(
                     if m_id:
                         est_id = m_id.group(0)
 
+            # Filter by target student ID if specified
+            if target_id:
+                t_str = str(target_id).strip()
+                if not (est_id == t_str or est_id.endswith(t_str)):
+                    continue
+
             # Deduplication: Keep only the most recent email per student ID
             if est_id:
                 if est_id in seen_ids:
@@ -699,6 +872,7 @@ def extract_gmail_interactive(
                 "날짜": date_str,
                 "이름": sender,
                 "메일제목": subject,
+                "is_replied": bool(has_thread_reply),
             }
             new_rows.append(row_data)
             late_mark = " [지각]" if is_late else ""
@@ -706,6 +880,36 @@ def extract_gmail_interactive(
                 f" -> 채점 완료: {est_id} ({sender}) | "
                 f"점수: {score}{late_mark} | {reason}"
             )
+
+        newly_replied = 0
+        already_replied = sum(1 for r in new_rows if r.get("is_replied"))
+
+        if do_reply:
+            unreplied_items = [r for r in new_rows if not r.get("is_replied")]
+            if unreplied_items:
+                print(
+                    f"\n🚀 [미답장 자동 답장 발송 시작] 총 {len(unreplied_items)}건 대상..."
+                )
+                current_task_str = f"0.{target_week}" if target_week else "과제"
+                for idx, item in enumerate(unreplied_items):
+                    sid = item["학번"]
+                    sname = item.get("이름", "")
+                    print(
+                        f" -> [{idx+1}/{len(unreplied_items)}] 답장 발송 시도: {sid} ({sname})"
+                    )
+                    success = send_single_reply(
+                        page, item, current_task_str, id_to_names
+                    )
+                    if success:
+                        newly_replied += 1
+                        item["is_replied"] = True
+                print(
+                    f"✨ 자동 답장 완료: {newly_replied}/{len(unreplied_items)}건 발송 성공\n"
+                )
+            else:
+                print(
+                    "\n✨ 모든 과제 메일에 이미 답장이 완료되어 있습니다 (발송 대상 0건).\n"
+                )
 
         context.close()
 
@@ -766,11 +970,38 @@ def extract_gmail_interactive(
         new_rows.sort(key=_csv_row_sort_key)
 
         with open(out_path, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(new_rows)
+
+        reply_stats = {
+            "already_replied": already_replied,
+            "newly_replied": newly_replied,
+            "unreplied": max(0, len(new_rows) - (already_replied + newly_replied)),
+            "total_replied": already_replied + newly_replied,
+            "total_submissions": len(new_rows),
+        }
         print(f"\n========= 총 {len(new_rows)}건 파싱 완료. {out_path} 저장 =========")
-        print_grading_summary(new_rows)
+        print_grading_summary(new_rows, reply_stats=reply_stats)
+
+        if do_sync:
+            print(f"\n구글 시트에 '{out_path}' 데이터 동기화 시도...")
+            data_to_append = []
+            for nr in new_rows:
+                data_to_append.append(
+                    [
+                        "",
+                        nr["학번"],
+                        nr["track"],
+                        nr["점수"],
+                        nr["유형"],
+                        nr["이유"],
+                        nr["날짜"],
+                        nr["이름"],
+                        nr["메일제목"],
+                    ]
+                )
+            _upload_rows_to_sheet(data_to_append)
     else:
         print("\n========= 조건에 맞는 저장할 데이터가 없습니다. =========")
 
@@ -1172,6 +1403,28 @@ if __name__ == "__main__":
         help="기존 CSV 파일 경로를 지정하여 시트에만 업로드 (크롤링 건너뜀)",
     )
     parser.add_argument(
+        "--reply",
+        action="store_true",
+        help="미답장 메일에 대해 트랙별 언어로 자동 답장 발송",
+    )
+    parser.add_argument(
+        "--sync",
+        action="store_true",
+        help="크롤링 및 채점 완료 후 구글 시트에 즉시 업로드",
+    )
+    parser.add_argument(
+        "--id",
+        dest="target_id",
+        type=str,
+        default=None,
+        help="특정 학생 학번 필터 (예: 742 또는 2026300742)",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="채점 + 시트 업로드 + 자동 답장 발송 원클릭 전체 실행",
+    )
+    parser.add_argument(
         "--run-all",
         action="store_true",
         help="py 과정의 0.7 ~ 0.c 과제를 일괄적으로 대화형 스크래핑 및 채점 진행",
@@ -1185,10 +1438,15 @@ if __name__ == "__main__":
     else:
         track_map = {"py": "468", "web1": "761", "web2": "762"}
         allowed_tracks = [track_map[t] for t in args.tracks if t in track_map]
+        do_reply = args.reply or args.all
+        do_sync = args.sync or args.all
         extract_gmail_interactive(
             target_week=args.week,
             allowed_tracks=allowed_tracks,
             track_names=args.tracks,
+            target_id=args.target_id,
             require_attachment=args.require_attachment,
-            skip_sheet=args.no_sheet,
+            skip_sheet=args.no_sheet and not do_sync,
+            do_reply=do_reply,
+            do_sync=do_sync,
         )

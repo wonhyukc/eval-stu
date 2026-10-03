@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
 # ────────────────────────────────────────────────────────
-# 이메일 과제(0.x) 채점 래퍼
+# 이메일 과제(0.x) 통합 고속 채점기 (grade.sh)
 #
 # 사용법:
-#   ./bin/grade.sh 0.4          # 크롤링 + CSV 저장
-#   ./bin/grade.sh 0.4 sync     # CSV → 구글 시트 업로드
+#   ./bin/grade.sh <과제번호> [동작] [필터...]
 #
-# ※ 정렬은 GAS onChange 트리거가 자동 처리합니다.
-#   수동 정렬이 필요하면 시트 메뉴 > 관리자 설정 > score 탭 정렬
+# 주요 동작:
+#   ./bin/grade.sh 0.5                  # [기본] 고속 채점 + CSV 저장 (미리보기, 시트/답장 X)
+#   ./bin/grade.sh 0.5 sync             # 채점 결과 구글 시트 동기화
+#   ./bin/grade.sh 0.5 reply            # 미답장 건만 핀포인트 자동 답장 발송
+#   ./bin/grade.sh 0.5 all              # 원클릭 전체: 채점 + 시트 동기화 + 자동 답장
+#
+# 부분 타겟팅 필터:
+#   ./bin/grade.sh 0.5 web1             # 특정 트랙만 (web1, web2, py)
+#   ./bin/grade.sh 0.5 reply py         # 파이썬 반만 미답장 답장 발송
+#   ./bin/grade.sh 0.5 --id 742         # 특정 학생 1명만 확인 (끝 3자리 또는 전체 학번)
+#   ./bin/grade.sh 0.5 reply --id 742   # 특정 학생 1명에게만 답장 발송
 # ────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -16,78 +24,122 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 PYTHON="${ROOT_DIR}/.venv/bin/python"
 GRADER="${ROOT_DIR}/bin/extract_emails.py"
 
-# ── 인자 없으면 사용법 출력 ──
 if [[ $# -eq 0 ]]; then
   cat <<'EOF'
-📋 이메일 과제 채점 스크립트 (grade.sh)
+📋 이메일 과제 통합 고속 채점기 (grade.sh)
 
 사용법:
-  ./bin/grade.sh <과제번호>           # 1단계: Gmail 크롤링 → CSV 저장
-  ./bin/grade.sh <과제번호> sync      # 2단계: CSV → 구글 시트 업로드
+  ./bin/grade.sh <과제번호> [동작] [필터...]
+
+동작 옵션:
+  (생략)       : 채점 + CSV 저장 (시트 반영 X, 답장 발송 X, 안전 미리보기)
+  sync         : 채점 결과 구글 시트 업로드 (Upsert)
+  reply        : 미답장 메일에 대해서만 핀포인트 자동 답장 발송
+  all          : 원클릭 전체: 채점 + 시트 업로드 + 자동 답장 발송
+
+타겟팅 필터:
+  py / web1 / web2   : 특정 트랙만 필터링
+  --id <학번>        : 특정 학생만 필터링 (끝 3자리 또는 전체 학번)
 
 예시:
-  ./bin/grade.sh 0.4                 # Gmail에서 메일 수집 + 채점 → CSV
-  ./bin/grade.sh 4                   # 위와 동일 (0. 자동 접두)
-  ./bin/grade.sh 0.4 sync            # CSV 확인 후 시트에 반영
-
-※ 정렬: GAS onChange 트리거가 sync 직후 자동 수행합니다.
-   수동 정렬: 시트 열기 → 관리자 설정 → score 탭 정렬
+  ./bin/grade.sh 0.5                   # 0.5 과제 전체 고속 채점 (5초)
+  ./bin/grade.sh 0.5 sync              # 채점 결과 구글 시트에 반영
+  ./bin/grade.sh 0.5 reply             # 미답장 학생들에게만 답장 발송
+  ./bin/grade.sh 0.5 all               # 채점 + 시트 업로드 + 답장 원클릭 완료
+  ./bin/grade.sh 0.5 web1              # 1반(web1)만 빠르게 채점
+  ./bin/grade.sh 0.5 reply py          # 4반(파이썬) 미답장자만 답장 발송
+  ./bin/grade.sh 0.5 reply --id 742    # 742 학생 1명만 확인 후 답장 발송
 EOF
   exit 0
 fi
 
 TASK="$1"
-ACTION="${2:-crawl}"
+shift
 
-# 숫자만 입력한 경우 0. 접두 (예: 4 → 0.4)
+# 숫자만 입력한 경우 0. 접두 (예: 5 → 0.5)
 if [[ "$TASK" =~ ^[0-9]+$ ]]; then
   TASK="0.${TASK}"
 fi
-
-# 0.4 → 4  (주차 번호만 추출)
 WEEK="${TASK#0.}"
 
+ACTION="crawl"
+TRACKS=()
+TARGET_ID=""
 
-if [[ "$ACTION" == "sync" ]]; then
-  # ── 2단계: CSV → 구글 시트 ──
-  CSV_FILE=""
-  for candidate in \
-    "${ROOT_DIR}/output/mail$(printf '%02d' "$WEEK" 2>/dev/null || echo "$WEEK").csv" \
-    "${ROOT_DIR}/output/mail${WEEK}.csv" \
-    "${ROOT_DIR}/9output/grades_output_${WEEK}_py.csv"; do
-    if [[ -f "$candidate" ]]; then
-      CSV_FILE="$candidate"
-      break
-    fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    sync)
+      ACTION="sync"
+      shift
+      ;;
+    reply)
+      ACTION="reply"
+      shift
+      ;;
+    all)
+      ACTION="all"
+      shift
+      ;;
+    py|web1|web2)
+      TRACKS+=("$1")
+      shift
+      ;;
+    --id|-i)
+      TARGET_ID="$2"
+      shift 2
+      ;;
+    *)
+      TRACKS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+ARGS=("$WEEK")
+
+if [[ ${#TRACKS[@]} -gt 0 ]]; then
+  for t in "${TRACKS[@]}"; do
+    ARGS+=("$t")
   done
-
-  echo ""
-  echo "═══════════════════════════════════════════════"
-  echo "  📊 과제 ${TASK} → 구글 시트 동기화"
-  echo "═══════════════════════════════════════════════"
-  echo ""
-
-  if [[ -z "$CSV_FILE" ]]; then
-    echo "❌ CSV 파일을 찾을 수 없습니다."
-    echo "   검색 경로: output/mail${WEEK}.csv, 9output/grades_output_${WEEK}_py.csv"
-    echo "   먼저 ./bin/grade.sh ${TASK} 로 크롤링하세요."
-    exit 1
-  fi
-
-  echo "📄 CSV 파일: ${CSV_FILE}"
-  echo "── 내용 미리보기 ──"
-  head -5 "$CSV_FILE"
-  echo "..."
-  echo ""
-
-  "$PYTHON" "$GRADER" --from-csv "$CSV_FILE"
-else
-  # ── 1단계: 크롤링 + CSV 저장 (시트 업로드 안 함) ──
-  echo ""
-  echo "═══════════════════════════════════════════════"
-  echo "  📧 과제 ${TASK} 크롤링 시작 (Playwright)"
-  echo "═══════════════════════════════════════════════"
-  echo ""
-
-  "$PYTHON" "$GRADER" "$WEEK" --no-sheet
 fi
+
+if [[ -n "$TARGET_ID" ]]; then
+  ARGS+=("--id" "$TARGET_ID")
+fi
+
+case "$ACTION" in
+  sync)
+    # 기존 CSV 파일이 있으면 --from-csv 우선 확인
+    CSV_FILE=""
+    for candidate in \
+      "${ROOT_DIR}/output/mail$(printf '%02d' "$WEEK" 2>/dev/null || echo "$WEEK").csv" \
+      "${ROOT_DIR}/output/mail${WEEK}.csv" \
+      "${ROOT_DIR}/9output/grades_output_${WEEK}_py.csv"; do
+      if [[ -f "$candidate" ]]; then
+        CSV_FILE="$candidate"
+        break
+      fi
+    done
+
+    # 만약 트랙/학번 필터가 없고 CSV가 존재하면 즉시 시트 업로드
+    if [[ -n "$CSV_FILE" && ${#TRACKS[@]} -eq 0 && -z "$TARGET_ID" ]]; then
+      echo "📄 기존 CSV 파일로 구글 시트 동기화: ${CSV_FILE}"
+      "$PYTHON" "$GRADER" --from-csv "$CSV_FILE"
+    else
+      echo "📊 크롤링 및 구글 시트 동기화 시작..."
+      "$PYTHON" "$GRADER" "${ARGS[@]}" --sync
+    fi
+    ;;
+  reply)
+    echo "✉️ 미답장 대상 핀포인트 답장 발송 시작..."
+    "$PYTHON" "$GRADER" "${ARGS[@]}" --no-sheet --reply
+    ;;
+  all)
+    echo "🚀 [원클릭 전체] 채점 + 구글 시트 동기화 + 자동 답장 발송 시작..."
+    "$PYTHON" "$GRADER" "${ARGS[@]}" --all
+    ;;
+  crawl|*)
+    echo "📧 과제 ${TASK} 고속 채점 시작 (미리보기/CSV 저장)..."
+    "$PYTHON" "$GRADER" "${ARGS[@]}" --no-sheet
+    ;;
+esac

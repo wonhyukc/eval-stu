@@ -36,3 +36,65 @@ def test_parse_students():
             assert isinstance(v, str)
             assert k.isdigit()  # 학번은 숫자 형태
             assert v in {"1", "2", "4"}  # 트랙 번호는 1, 2, 4 로 정규화됨
+
+
+def test_build_reply_body():
+    from bin.extract_emails import build_reply_body
+
+    id_to_names = {
+        "2026300742": {"eng": "John Doe", "kor": "홍길동"},
+        "2026300123": {"eng": "Jane Smith", "kor": "김철수"},
+    }
+
+    # K트랙 (4반) 테스트 -> 100% 한글
+    row_py = {
+        "학번": "2026300742",
+        "track": "4",
+        "점수": 1.0,
+        "이유": "정상 제출 (기한내/정확한 양식)",
+        "이름": "홍길동",
+    }
+    body_py = build_reply_body(row_py, "0.5", id_to_names)
+    assert "안녕하세요 홍길동 학생" in body_py
+    assert "0.5 과제 이메일이 정상적으로 접수 및 채점되었습니다" in body_py
+    assert "정원혁 드림" in body_py
+
+    # E트랙 (1반/2반) 테스트 -> 100% 영문
+    row_web = {
+        "학번": "2026300123",
+        "track": "1",
+        "점수": 1.0,
+        "이유": "On-time & Exact Format",
+        "이름": "Jane Smith",
+    }
+    body_web = build_reply_body(row_web, "0.5", id_to_names)
+    assert "Dear Jane Smith" in body_web
+    assert (
+        "Your assignment submission has been received and graded successfully"
+        in body_web
+    )
+    assert "Wonhyuk William Chung" in body_web
+
+
+def test_print_grading_summary(capsys):
+    from bin.extract_emails import print_grading_summary
+
+    rows = [
+        {"track": "4", "점수": 1.0, "is_replied": True},
+        {"track": "1", "점수": 0.9, "is_replied": False},
+        {"track": "2", "점수": 0.0, "is_replied": True},
+    ]
+    reply_stats = {
+        "already_replied": 2,
+        "newly_replied": 1,
+        "unreplied": 0,
+        "total_replied": 3,
+        "total_submissions": 3,
+    }
+    print_grading_summary(rows, reply_stats=reply_stats)
+    captured = capsys.readouterr().out
+    assert "📊 [채점 결과 요약]" in captured
+    assert "✉️ [답장 현황]" in captured
+    assert "총 답장 건수   : 3건" in captured
+    assert "이미 답장 완료 : 2건" in captured
+    assert "이번에 답장 완료: 1건" in captured
