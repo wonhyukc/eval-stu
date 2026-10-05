@@ -710,6 +710,7 @@ def run_grading(
             dismiss_popups(page, log)
             email_rows = page.locator("table.F.cf.zt:visible tr.zA:visible")
             row_count = email_rows.count()
+            initial_thread_count = row_count  # B-4: 수집률 검증용 초기 카운트
             log.info(f"📬 총 {row_count}개 메일 스레드 검색됨")
 
             if row_count == 0:
@@ -728,6 +729,7 @@ def run_grading(
 
             collected = []
             page_num = 1
+            empty_page_streak = 0  # A-3: 빈 페이지 연속 카운터
 
             while True:
                 dismiss_popups(page, log)
@@ -736,6 +738,15 @@ def run_grading(
                 log.info(
                     f"\n📑 [페이지 {page_num}] {row_count}개 메일 스레드 순회 시작"
                 )
+
+                # A-3: 빈 페이지 연속 3회 감지 시 조기 중단
+                if row_count == 0:
+                    empty_page_streak += 1
+                    if empty_page_streak >= 3:
+                        log.info("🏁 연속 3페이지 빈 결과 → 수집 종료 (공회전 방지)")
+                        break
+                else:
+                    empty_page_streak = 0
 
                 for idx in range(row_count):
                     log.info(
@@ -747,7 +758,26 @@ def run_grading(
                             "table.F.cf.zt:visible tr.zA:visible"
                         )
                         if idx >= rows_current.count():
-                            break
+                            # A-2: 행 소실 감지 → 검색 URL 재이동 재시도
+                            log.warning(
+                                f"   ⚠️ DOM 행 소실 감지 "
+                                f"(expected={row_count}, actual={rows_current.count()}, idx={idx}) "
+                                f"→ 검색 URL 재이동 시도"
+                            )
+                            page.goto(
+                                f"https://mail.google.com/mail/u/0/#search/{encoded}"
+                            )
+                            page.wait_for_timeout(5000)
+                            dismiss_popups(page, log)
+                            rows_current = page.locator(
+                                "table.F.cf.zt:visible tr.zA:visible"
+                            )
+                            if idx >= rows_current.count():
+                                log.error(
+                                    f"   ❌ 재이동 후에도 행 부족 "
+                                    f"(actual={rows_current.count()}) → break"
+                                )
+                                break
                         target_row = rows_current.nth(idx)
 
                         sub_el = target_row.locator("span.bog")
@@ -1009,7 +1039,16 @@ def run_grading(
                             back_btn.first.click()
                         else:
                             page.go_back()
+                        # A-1: 복귀 후 행 수 복구 대기 (최대 10초 polling)
+                        # Gmail SPA가 검색 결과를 비동기 재렌더링하는 시간을 보장
                         page.wait_for_timeout(2000)
+                        for _wait in range(16):
+                            rows_check = page.locator(
+                                "table.F.cf.zt:visible tr.zA:visible"
+                            )
+                            if rows_check.count() >= row_count:
+                                break
+                            page.wait_for_timeout(500)
 
                         # 단독 학생 필터 처리 시 1건 수집되면 즉시 순회 완료
                         if target_student_id and len(collected) > 0:
@@ -1077,6 +1116,25 @@ def run_grading(
 
             final_list = list(deduped.values())
             log.info(f"✅ 유효 제출: {len(final_list)}명")
+
+            # B-4: 수집률 정합성 검증 — 초기 검색 건수 대비 수집률 확인
+            if (
+                initial_thread_count > 0
+                and not target_student_id
+                and len(collected) < initial_thread_count * 0.8
+            ):
+                pct = len(collected) / initial_thread_count * 100
+                log.warning(
+                    f"⚠️ 수집률 저조: 검색={initial_thread_count}, "
+                    f"수집={len(collected)} ({pct:.0f}%)"
+                )
+                send_alert(
+                    "⚠️ 채점 수집률 저조",
+                    f"과제 {task_id}: 검색 {initial_thread_count}건 중 "
+                    f"{len(collected)}건만 수집됨 ({pct:.0f}%)",
+                    tags="warning",
+                    priority="high",
+                )
 
             # Step 4: 시트 동기화
             wk_num = task_id.split(".")[1]
