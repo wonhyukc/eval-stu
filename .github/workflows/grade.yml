@@ -40,5 +40,7 @@ jobs:
 
     - name: Run Auto Grader (0.7)
       run: |
-        mkdir -p output
+        # [LEGACY] This workflow uses the legacy extract_grades.py script.
+        # It may not fully align with the current 1.0-point grading scale.
+        mkdir -p output 9output
         python bin/extract_grades.py --query "assignment 0.7"

@@ -1,4 +1,7 @@
 /**
+ * DEPRECATED: WARNING - This script uses an old tab whitelist and could delete current tabs like peer-eval.
+ * Do not use without updating the whitelist.
+ * 
  * 스프레드시트 ID 정의 (코드 최상단 전역 변수)
  * 2반(web2)이 마스터(SSOT) 원본 시트입니다.
  */
