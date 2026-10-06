@@ -22,22 +22,23 @@ def test_normalize_row_to_11cols_from_9cols():
     ]
     new_row = normalize_row_to_11cols(old_row)
     assert len(new_row) == 11
-    # [No, wk, ID, Track, Score, Type1, Type2, Reason, Date, Name, Subject]
+    # [No, wk, ID, Track, ScaledScore, Score, Type1, Type2, Reason, Date, Name]
     assert new_row[0] == 1  # No
     assert new_row[1] == "2"  # wk (0.2에서 추출)
     assert new_row[2] == "2026300123"  # ID
     assert new_row[3] == "15144"  # Track
-    assert new_row[4] == 1.0  # Score
-    assert new_row[5] == "hw"  # Type1
-    assert new_row[6] == "0.2"  # Type2
-    assert new_row[7] == "On-time & Exact Format"  # Reason
-    assert new_row[8] == "2026-09-15"  # Date
-    assert new_row[9] == "John Doe"  # Name
-    assert new_row[10] == "과제 0.2 2026300123"  # Subject
+    assert str(new_row[4]).startswith("=IF(")  # Scaled Score 수식 (E열)
+    assert new_row[5] == 1.0  # Score 원점수 (F열)
+    assert new_row[6] == "hw"  # Type1 (G열)
+    assert new_row[7] == "0.2"  # Type2 (H열)
+    assert new_row[8] == "On-time & Exact Format"  # Reason (I열)
+    assert new_row[9] == "2026-09-15"  # Date (J열)
+    assert str(new_row[10]).startswith("=IFERROR(")  # Name VLOOKUP 수식 (K열)
 
 
-def test_normalize_row_to_11cols_already_11cols():
-    row_11 = [
+def test_normalize_row_to_11cols_from_old_11cols():
+    # 구 11열 구조: [No, wk, ID, Track, Score, Type1, Type2, Reason, Date, Name, Subject]
+    row_old_11 = [
         1,
         "1",
         "2026300999",
@@ -50,8 +51,19 @@ def test_normalize_row_to_11cols_already_11cols():
         "Alice",
         "Subject",
     ]
-    result = normalize_row_to_11cols(row_11)
-    assert result == row_11
+    result = normalize_row_to_11cols(row_old_11)
+    assert len(result) == 11
+    assert result[0] == 1  # No
+    assert result[1] == "1"  # wk
+    assert result[2] == "2026300999"  # ID
+    assert result[3] == "15143"  # Track
+    assert str(result[4]).startswith("=IF(")  # Scaled Score 수식
+    assert result[5] == 1.0  # Score 원점수
+    assert result[6] == "hw"  # Type1
+    assert result[7] == "0.1"  # Type2
+    assert result[8] == "Pass"  # Reason
+    assert result[9] == "2026-09-10"  # Date
+    assert str(result[10]).startswith("=IFERROR(")  # Name VLOOKUP 수식
 
 
 def test_route_web_rows_11cols():
@@ -317,14 +329,60 @@ def test_make_scaled_score_formula():
     formula_172 = make_scaled_score_formula(172)
     assert (
         formula_172
-        == '=IF(G172="lab", IF(B172=3, ROUND((E172/9)*3, 2), ROUND((E172/10)*3, 2)), E172)'
+        == '=IF(H172="lab", IF(B172=3, ROUND((F172/9)*3, 2), ROUND((F172/10)*3, 2)), F172)'
     )
 
     formula_193 = make_scaled_score_formula(193)
     assert (
         formula_193
-        == '=IF(G193="lab", IF(B193=3, ROUND((E193/9)*3, 2), ROUND((E193/10)*3, 2)), E193)'
+        == '=IF(H193="lab", IF(B193=3, ROUND((F193/9)*3, 2), ROUND((F193/10)*3, 2)), F193)'
     )
+
+
+def test_make_name_vlookup_formula():
+    from modules.sheet_updater import make_name_vlookup_formula
+
+    formula_web = make_name_vlookup_formula(50, course="web1")
+    assert formula_web == '=IFERROR(VLOOKUP(C50, progress!$A$5:$C, 3, FALSE), "")'
+
+    formula_py = make_name_vlookup_formula(50, course="py")
+    assert formula_py == '=IFERROR(VLOOKUP(C50, progress!$A$5:$B, 2, FALSE), "")'
+
+
+def test_normalize_row_to_13cols():
+    from modules.sheet_updater import normalize_row_to_13cols
+
+    # 11열 입력: [no, wk, sid, track, score, t1, t2, reason, dt, name, subj]
+    row_11 = [
+        1,
+        "3",
+        "2026300123",
+        "1",
+        10.0,
+        "hw",
+        "lab",
+        "정상 제출",
+        "09/30 10:00",
+        "홍길동",
+        "과제제출",
+    ]
+    row_13 = normalize_row_to_13cols(row_11, row_num=10, course="web1")
+    assert len(row_13) == 13
+    assert row_13[0] == 1  # No
+    assert row_13[1] == "3"  # wk
+    assert row_13[2] == "2026300123"  # ID
+    assert row_13[3] == "1"  # Track
+    assert row_13[4].startswith("=IF(H10=")  # Scaled Score 수식 (E열)
+    assert row_13[5] == 10.0  # Score 원점수 (F열)
+    assert row_13[6] == "hw"  # Type1 (G열)
+    assert row_13[7] == "lab"  # Type2 (H열)
+    assert row_13[8] == "정상 제출"  # Reason (I열)
+    assert row_13[9] == "09/30 10:00"  # Date (J열)
+    assert (
+        row_13[10] == '=IFERROR(VLOOKUP(C10, progress!$A$5:$C, 3, FALSE), "")'
+    )  # Name (K열)
+    assert row_13[11] == "과제제출"  # Subject (L열)
+    assert row_13[12] == ""  # Appeal (M열)
 
 
 def test_is_lab_assignment():
@@ -426,9 +484,95 @@ def test_upsert_grades_to_sheet_preserves_lab_raw_scores():
     assert len(captured_appends) == 1
     appended_rows = captured_appends[0]
     assert len(appended_rows) == 2
-    # Score(인덱스 4)가 10.0과 9.0으로 그대로 보존되었는지 검증 (5.0, 4.5로 반토막 나지 않음)
-    assert appended_rows[0][4] == 10.0
-    assert appended_rows[1][4] == 9.0
+    # 13열 구조 검증:
+    # E열(인덱스 4)은 Scaled Score 수식
+    assert appended_rows[0][4].startswith("=IF(")
+    # F열(인덱스 5)은 원점수(10.0, 9.0)가 반토막 나지 않고 유지됨
+    assert appended_rows[0][5] == 10.0
+    assert appended_rows[1][5] == 9.0
+    # K열(인덱스 10)은 VLOOKUP 수식
+    assert appended_rows[0][10].startswith("=IFERROR(VLOOKUP(")
+
+
+def test_upsert_grades_to_sheet_formula_preservation():
+    """기존 행 업데이트 시 E열 수식 및 K열 Name VLOOKUP 수식이 보존되는지 검증."""
+    from unittest.mock import MagicMock, patch
+    from modules.sheet_updater import upsert_grades_to_sheet
+
+    fake_config = {
+        "sheet_id": "fake_sheet_id",
+        "target_gid": 12345,
+    }
+
+    mock_service = MagicMock()
+    mock_service.spreadsheets().get().execute.return_value = {
+        "sheets": [{"properties": {"sheetId": 12345, "title": "score"}}]
+    }
+    # 기존 시트에 이미 1행이 있는 상태 (2행에 13열 데이터, 수식 포함)
+    existing_row = [
+        "1",
+        2,
+        "'123",
+        "1",
+        '=IF(H2="lab", IF(B2=3, ROUND((F2/9)*3, 2), ROUND((F2/10)*3, 2)), F2)',
+        1.0,
+        "hw",
+        "'0.2",
+        "On-time & Exact Format",
+        "09/15 14:00",
+        '=IFERROR(VLOOKUP(C2, progress!$A$5:$C, 3, FALSE), "")',
+        "과제 0.2",
+        "",
+    ]
+    mock_service.spreadsheets().values().get().execute.return_value = {
+        "values": [existing_row]
+    }
+
+    captured_updates = []
+
+    def mock_update(spreadsheetId, range, valueInputOption, body):
+        captured_updates.append((range, body.get("values", [])))
+        return MagicMock(execute=MagicMock(return_value={"updates": {}}))
+
+    mock_service.spreadsheets().values().update.side_effect = mock_update
+
+    # 동일한 키('123', 'hw', '0.2')로 점수 및 사유 변경 요청
+    test_update = [
+        [
+            1,
+            "2",
+            "2026300123",
+            "1",
+            0.9,
+            "hw",
+            "0.2",
+            "경미한 양식 오차 (괄호/불필요 기호)",
+            "09/15 14:00",
+            "홍길동",
+            "과제 0.2",
+        ]
+    ]
+
+    with patch(
+        "modules.sheet_updater.load_course_config", return_value=fake_config
+    ), patch(
+        "modules.sheet_updater.get_sheet_service", return_value=mock_service
+    ), patch(
+        "modules.sheet_updater.sort_sheet_remote", return_value=True
+    ), patch(
+        "modules.sheet_updater.apply_score_sheet_formatting", return_value=None
+    ):
+        result = upsert_grades_to_sheet(test_update, course="web1")
+
+    assert result is True
+    assert len(captured_updates) == 1
+    range_str, values = captured_updates[0]
+    assert range_str == "score!A2:M2"
+    updated_row = values[0]
+    # E열(인덱스 4)과 K열(인덱스 10)의 수식이 보존되었는지 검증!
+    assert updated_row[4] == existing_row[4]
+    assert updated_row[5] == 0.9  # 원점수 업데이트
+    assert updated_row[10] == existing_row[10]  # VLOOKUP 보존
 
 
 def test_append_grades_to_sheet_preserves_lab_raw_scores():
@@ -492,5 +636,8 @@ def test_append_grades_to_sheet_preserves_lab_raw_scores():
     assert len(captured_appends) == 1
     appended_rows = captured_appends[0]
     assert len(appended_rows) == 2
-    assert appended_rows[0][4] == 10.0
-    assert appended_rows[1][4] == 9.0
+    # 13열 구조: E열=수식, F열=원점수(10.0, 9.0), K열=VLOOKUP
+    assert appended_rows[0][4].startswith("=IF(")
+    assert appended_rows[0][5] == 10.0
+    assert appended_rows[1][5] == 9.0
+    assert appended_rows[0][10].startswith("=IFERROR(")

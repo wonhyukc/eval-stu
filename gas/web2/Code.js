@@ -196,8 +196,8 @@ function autoSortScoreTabSilent() {
   const dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
   dataRange.sort([
     { column: 2, ascending: false },
-    { column: 6, ascending: true },
     { column: 7, ascending: true },
+    { column: 8, ascending: true },
     { column: 3, ascending: true },
   ]);
 
@@ -384,8 +384,8 @@ function protectHeaderAndColumnD() {
 
 /**
  * score 탭을 정렬합니다.
- * 정렬 기준: 1차 주차(B열) 역순 → 2차 유형1(F열) → 3차 유형2(G열) → 4차 학번(C열) 오름차순
- * No(A열)는 맨 위부터 N down to 1로 재부여합니다.
+ * 정렬 기준: 1차 주차(B열) 역순 → 2차 유형1(G열) → 3차 유형2(H열) → 4차 학번(C열) 오름차순
+ * 원래 No 번호를 유지합니다.
  */
 function sortScoreTab() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -408,8 +408,8 @@ function sortScoreTab() {
 
   dataRange.sort([
     { column: 2, ascending: false },
-    { column: 6, ascending: true },
     { column: 7, ascending: true },
+    { column: 8, ascending: true },
     { column: 3, ascending: true },
   ]);
 
@@ -498,8 +498,8 @@ function syncServiceAccountAndGradeTab() {
   if (gradeSheet) {
     const lastRow = gradeSheet.getLastRow();
     for (let r = 3; r <= lastRow; r++) {
-      gradeSheet.getRange(r, 4).setFormula(`=SUMIFS(score!$M:$M, score!$C:$C, $B${r}, score!$F:$F, "hw")`);
-      gradeSheet.getRange(r, 5).setFormula(`=SUMIFS(score!$M:$M, score!$C:$C, $B${r}, score!$F:$F, "class")`);
+      gradeSheet.getRange(r, 4).setFormula(`=SUMIFS(score!$E:$E, score!$C:$C, $B${r}, score!$G:$G, "hw")`);
+      gradeSheet.getRange(r, 5).setFormula(`=SUMIFS(score!$E:$E, score!$C:$C, $B${r}, score!$G:$G, "class")`);
     }
   }
 

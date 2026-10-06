@@ -98,38 +98,118 @@ def get_max_no(service, spreadsheet_id, sheet_title):
 
 
 def normalize_row_to_11cols(row):
+    """구버전 호환용 11열 변환 함수."""
+    return normalize_row_to_13cols(row)[:11]
+
+
+def normalize_row_to_13cols(row, row_num: int = 2, course: str = "web1"):
     """
-    행 데이터를 표준 11열 구조로 정규화합니다.
-    [No, wk, ID, Track, Score, Type1, Type2, Reason, Date, Name, Subject] (A~K)
-    구 9열 구조([No, StudentID, Track, Score, Type, Reason, Date, Name, Subject])가 들어오면
-    11열 구조로 자동 확장 변환합니다.
+    행 데이터를 신규 표준 13열 구조로 정규화합니다.
+    [No, wk, ID, Track, ScaledScore, Score, Type1, Type2, Reason, Date, Name, Subject, Appeal] (A~M)
+    - E열: Scaled Score 수식 (M열에서 이동)
+    - F열: 루브릭 원점수 (Score)
+    - G열: Type1
+    - H열: Type2
+    - I열: Reason
+    - J열: Date
+    - K열: Name (VLOOKUP 수식 보존)
+    - L열: Subject
+    - M열: Appeal Response
     """
-    if len(row) < 11:
-        # 이미 11열 구조에서 끝 빈칸(Name, Subject 등)이 생략된 행인지 확인
-        if len(row) > 5 and str(row[5]).strip().lower() in [
+    r = list(row)
+    scaled_formula = make_scaled_score_formula(row_num)
+    name_formula = make_name_vlookup_formula(row_num, course)
+
+    # 1. 이미 13열 구조인 경우
+    if len(r) >= 13:
+        # E열이 비어있거나 수식이 아니면 수식 주입
+        if not str(r[4]).startswith("="):
+            r[4] = scaled_formula
+        # K열이 비어있거나 수식이 아니면 VLOOKUP 수식 주입
+        if not str(r[10]).startswith("="):
+            r[10] = name_formula
+        return r[:13]
+
+    # 2. 기존 11열 구조인 경우: [No, wk, ID, Track, Score, Type1, Type2, Reason, Date, Name, Subject]
+    if len(r) == 11 and str(r[5]).strip().lower() in [
+        "hw",
+        "class",
+        "mid",
+        "fin",
+        "peer",
+        "lab",
+    ]:
+        no, wk, sid, track, score, t1, t2, reason, dt, _, subj = r
+        return [
+            no,
+            wk,
+            sid,
+            track,
+            scaled_formula,
+            score,
+            t1,
+            t2,
+            reason,
+            dt,
+            name_formula,
+            subj,
+            "",
+        ]
+
+    # 3. 구 9열 구조인 경우: [no, sid, track, score, ctype, reason, dt, name, subj]
+    if len(r) == 9 and not (str(r[1]).isdigit() and int(r[1]) < 16):
+        no, sid, track, score, ctype, reason, dt, _, subj = r
+        clean_t = str(ctype).replace("과제", "").replace("'", "").strip()
+        m = re.search(r"0\.(\d+)", clean_t)
+        wk = m.group(1) if m else ""
+        return [
+            no,
+            wk,
+            sid,
+            track,
+            scaled_formula,
+            score,
             "hw",
-            "class",
-            "mid",
-            "fin",
-        ]:
-            return list(row) + [""] * (11 - len(row))
-        if len(row) == 9 and not (str(row[1]).isdigit() and int(row[1]) < 16):
-            no, sid, track, score, ctype, reason, dt, name, subj = row
-            clean_t = str(ctype).replace("과제", "").replace("'", "").strip()
-            m = re.search(r"0\.(\d+)", clean_t)
-            wk = m.group(1) if m else ""
-            return [no, wk, sid, track, score, "hw", ctype, reason, dt, name, subj]
-        return list(row) + [""] * (11 - len(row))
-    return list(row)
+            ctype,
+            reason,
+            dt,
+            name_formula,
+            subj,
+            "",
+        ]
+
+    # 4. 기타 불완전한 행: 13열로 확장
+    while len(r) < 13:
+        r.append("")
+    if not str(r[4]).startswith("="):
+        r[4] = scaled_formula
+    if not str(r[10]).startswith("="):
+        r[10] = name_formula
+    return r[:13]
 
 
 def make_scaled_score_formula(row_num: int) -> str:
-    """주어진 행 번호에 대한 M열(Scaled Score) 수식을 생성합니다."""
+    """주어진 행 번호에 대한 E열(Scaled Score) 수식을 생성합니다.
+    H열이 'lab'이면 주차별 실습 만점(3주차 9점, 그 외 10점) 대비 3.0점 스케일 환산,
+    그 외는 F열(원점수) 그대로 반영.
+    """
     return (
-        f'=IF(G{row_num}="lab", '
-        f"IF(B{row_num}=3, ROUND((E{row_num}/9)*3, 2), ROUND((E{row_num}/10)*3, 2)), "
-        f"E{row_num})"
+        f'=IF(H{row_num}="lab", '
+        f"IF(B{row_num}=3, ROUND((F{row_num}/9)*3, 2), ROUND((F{row_num}/10)*3, 2)), "
+        f"F{row_num})"
     )
+
+
+def make_name_vlookup_formula(row_num: int, course: str = "web1") -> str:
+    """주어진 행 번호에 대한 K열(Name) VLOOKUP 수식을 생성합니다.
+    C열(학번)을 참조하여 progress 탭에서 학생명을 조회합니다.
+    - web1, web2: progress C열(영문 성명)
+    - py: progress B열(한글 성명)
+    """
+    clean_course = str(course).lower()
+    if clean_course == "py":
+        return f'=IFERROR(VLOOKUP(C{row_num}, progress!$A$5:$B, 2, FALSE), "")'
+    return f'=IFERROR(VLOOKUP(C{row_num}, progress!$A$5:$C, 3, FALSE), "")'
 
 
 TRACK_NORMALIZATION_MAP = {
@@ -275,16 +355,16 @@ def format_date_to_mmdd_hhmm(date_val: Any) -> str:
 
 
 def apply_score_sheet_formatting(service, spreadsheet_id: str, sheet_id: int) -> None:
-    """Score(D열) 및 Scaled Score(M열) 우측 정렬, Date(I열) 왼쪽 정렬 서식 적용."""
+    """Scaled Score(E열), Score(F열) 우측 정렬 및 0.00 서식, Date(J열) 왼쪽 정렬 서식 적용."""
     requests = [
-        # D열 (Score, col index 3) 우측 정렬 및 숫자 서식
+        # E열 (Scaled Score, col index 4) 우측 정렬 및 숫자 서식 (0.00)
         {
             "repeatCell": {
                 "range": {
                     "sheetId": sheet_id,
                     "startRowIndex": 1,
-                    "startColumnIndex": 3,
-                    "endColumnIndex": 4,
+                    "startColumnIndex": 4,
+                    "endColumnIndex": 5,
                 },
                 "cell": {
                     "userEnteredFormat": {
@@ -295,14 +375,14 @@ def apply_score_sheet_formatting(service, spreadsheet_id: str, sheet_id: int) ->
                 "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.numberFormat",
             }
         },
-        # M열 (Scaled Score, col index 12) 우측 정렬 및 숫자 서식 (소수점 2자리)
+        # F열 (Score 원점수, col index 5) 우측 정렬 및 숫자 서식 (0.00)
         {
             "repeatCell": {
                 "range": {
                     "sheetId": sheet_id,
                     "startRowIndex": 1,
-                    "startColumnIndex": 12,
-                    "endColumnIndex": 13,
+                    "startColumnIndex": 5,
+                    "endColumnIndex": 6,
                 },
                 "cell": {
                     "userEnteredFormat": {
@@ -313,14 +393,14 @@ def apply_score_sheet_formatting(service, spreadsheet_id: str, sheet_id: int) ->
                 "fields": "userEnteredFormat.horizontalAlignment,userEnteredFormat.numberFormat",
             }
         },
-        # I열 (Date, col index 8) 왼쪽 정렬
+        # J열 (Date, col index 9) 왼쪽 정렬
         {
             "repeatCell": {
                 "range": {
                     "sheetId": sheet_id,
                     "startRowIndex": 1,
-                    "startColumnIndex": 8,
-                    "endColumnIndex": 9,
+                    "startColumnIndex": 9,
+                    "endColumnIndex": 10,
                 },
                 "cell": {
                     "userEnteredFormat": {
@@ -625,8 +705,8 @@ def translate_reason_to_ko(reason: str) -> str:
 
 
 def sort_sheet_rows(rows_data, renumber_desc=False):
-    """
-    11열 성적 데이터를 4단계 표준 정렬 순서로 정렬합니다:
+    """13열 성적 데이터를 4단계 표준 정렬 순서로 정렬합니다:
+
     1차: week 역순 (descending)
     2차: Type1 오름차순 (ascending)
     3차: Type2 오름차순 (ascending)
@@ -634,7 +714,7 @@ def sort_sheet_rows(rows_data, renumber_desc=False):
 
     ⚠️ No(A열)는 고유 식별 번호이므로 기본적으로 정렬 시 재부여하지 않고 원본 값을 보존합니다.
     """
-    normalized = [normalize_row_to_11cols(r) for r in rows_data]
+    normalized = [normalize_row_to_13cols(r) for r in rows_data]
 
     def _sort_key(row):
         # 1) week 역순
@@ -644,17 +724,17 @@ def sort_sheet_rows(rows_data, renumber_desc=False):
         except ValueError:
             wk_val = 0
 
-        # 2) type1 오름차순
-        t1_str = str(row[5]).strip().lower() if len(row) > 5 else ""
+        # 2) type1 오름차순 (신규 G열, col index 6)
+        t1_str = str(row[6]).strip().lower() if len(row) > 6 else ""
 
-        # 3) type2 오름차순
+        # 3) type2 오름차순 (신규 H열, col index 7)
         t2_str = (
-            str(row[6]).replace("과제", "").replace("'", "").strip().lower()
-            if len(row) > 6
+            str(row[7]).replace("과제", "").replace("'", "").strip().lower()
+            if len(row) > 7
             else ""
         )
 
-        # 4) id 오름차순
+        # 4) id 오름차순 (C열, col index 2)
         id_str = str(row[2]).replace("'", "").strip() if len(row) > 2 else ""
         try:
             id_val = (0, int(id_str))
@@ -678,12 +758,12 @@ def sort_sheet_remote(course="py"):
 
     정렬 기준:
       1차 주차(B열, col 1) 역순
-      2차 Type1(F열, col 5) 오름차순
-      3차 Type2(G열, col 6) 오름차순
+      2차 Type1(G열, col 6) 오름차순
+      3차 Type2(H열, col 7) 오름차순
       4차 학번(C열, col 2) 오름차순
 
     ⚠️ A열(No)을 포함한 전체 행이 원자적으로 이동하므로,
-       기존 번호(No) 및 수식(M열)이 절대 훼손되거나 덮어써지지 않고 100% 보존됩니다.
+       기존 번호(No) 및 수식(E열, K열)이 절대 훼손되거나 덮어써지지 않고 100% 보존됩니다.
     """
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config = load_course_config(base_dir, course)
@@ -712,8 +792,8 @@ def sort_sheet_remote(course="py"):
             },
             "sortSpecs": [
                 {"dimensionIndex": 1, "sortOrder": "DESCENDING"},  # wk (B열)
-                {"dimensionIndex": 5, "sortOrder": "ASCENDING"},  # Type1 (F열)
-                {"dimensionIndex": 6, "sortOrder": "ASCENDING"},  # Type2 (G열)
+                {"dimensionIndex": 6, "sortOrder": "ASCENDING"},  # Type1 (G열)
+                {"dimensionIndex": 7, "sortOrder": "ASCENDING"},  # Type2 (H열)
                 {"dimensionIndex": 2, "sortOrder": "ASCENDING"},  # ID (C열)
             ],
         }
@@ -776,64 +856,94 @@ def append_grades_to_sheet(rows_data, course="py"):
         print(f"❌ 오류: 시트 ID(gid={target_gid})를 찾을 수 없습니다.")
         return False
 
-    # 기존 데이터에서 최대 no 조회 후 새로 추가될 데이터에 순차적으로 no 할당
+    # 기존 데이터에서 최대 no 및 기존 행 수 조회
     max_no = get_max_no(service, spreadsheet_id, sheet_title)
-    normalized_rows = [normalize_row_to_11cols(r) for r in rows_data]
+    try:
+        res = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=spreadsheet_id, range=f"{sheet_title}!A:A")
+            .execute()
+        )
+        existing_row_count = len(res.get("values", []))
+    except Exception:
+        existing_row_count = max_no + 1
 
-    for i, row in enumerate(normalized_rows):
+    formatted_rows = []
+    for i, r in enumerate(rows_data):
+        target_row_num = existing_row_count + i + 1
+        row = normalize_row_to_13cols(r, row_num=target_row_num, course=course)
         row[0] = max_no + i + 1
+
         # '주차(wk)' 컬럼(인덱스 1)에 대해, 항상 숫자(int)로 저장하여 정렬 일관성 보장
         if len(row) > 1 and row[1]:
             try:
                 row[1] = int(str(row[1]).strip().replace("'", ""))
             except ValueError:
                 pass
+
         # '학번(ID)' 컬럼(인덱스 2)에 대해, 끝 3자리만 추출 + 문자열 강제 포맷팅(') 적용
         if len(row) > 2 and row[2]:
             clean_id = str(row[2]).lstrip("'").strip()
             last3 = clean_id[-3:] if len(clean_id) >= 3 else clean_id
             row[2] = f"'{last3}"
+
         # 'Track' 컬럼(인덱스 3)에 대해, '1', '2', '4' 단일 숫자로 정규화
         if len(row) > 3 and row[3]:
             row[3] = normalize_track(row[3])
-        # 'Type2' 컬럼(인덱스 6)에 대해, 구글 시트가 숫자로 자동 변환하지 못하도록 문자열 강제 포맷팅(') 적용
-        if len(row) > 6 and row[6]:
-            clean_type2 = str(row[6]).replace("과제", "").replace("'", "").strip()
-            row[6] = f"'{clean_type2}"
-        # '메일제목(Subject)' 컬럼(인덱스 10)에 대해, 순수 숫자가 숫자로 자동 변환되지 않도록 문자열 강제 포맷팅(') 적용
-        if len(row) > 10 and row[10]:
-            clean_subject = str(row[10]).lstrip("'")
-            row[10] = f"'{clean_subject}"
-        # 점수 스케일 환산:
+
+        # E열(Scaled Score): 수식 보장
+        row[4] = make_scaled_score_formula(target_row_num)
+
+        # F열 원점수 (Score, 인덱스 5):
         # - 실습 과제(lab): score 탭에는 루브릭 만점 점수(원점수: 9점, 10점 등) 그대로 기록
         # - 이메일 과제(hw) 및 기타: 1.0점 만점 스케일 적용 (SSOT 정책 준수)
-        if len(row) > 4 and row[4] != "":
-            t1_val = row[5] if len(row) > 5 else ""
-            t2_val = row[6] if len(row) > 6 else ""
+        if len(row) > 5 and row[5] != "":
+            t1_val = row[6] if len(row) > 6 else ""
+            t2_val = row[7] if len(row) > 7 else ""
             if is_lab_assignment(t1_val, t2_val):
-                # 실습 과제는 루브릭 원점수 그대로 유지 (grade 탭 환산 시 3.0점 스케일 적용)
                 pass
             else:
-                row[4] = convert_score_to_1scale(str(row[4]))
-            # 숫자는 float로 변환하여 구글 시트 숫자 인식 및 우측 정렬 보장
+                row[5] = convert_score_to_1scale(str(row[5]))
             try:
-                row[4] = float(row[4])
+                row[5] = float(row[5])
             except (ValueError, TypeError):
                 pass
-        # 사유 SSOT 정규화: 2점 스케일 사유 → 표준 사유 (언어 변환 전에 적용)
-        if len(row) > 7 and row[7]:
-            row[7] = normalize_reason_to_ssot(str(row[7]))
-        # 분반별 언어 정책: 파이썬(K트랙)은 한글, 웹(E트랙)은 영어
-        if course == "py" and len(row) > 7:
-            row[7] = translate_reason_to_ko(str(row[7]))
-        elif course in ["web", "web1", "web2"] and len(row) > 7:
-            row[7] = translate_reason_to_en(str(row[7]))
 
-    range_name = f"{sheet_title}!A:K"  # A~K열 11열 데이터 기준으로 append
-    body = {"values": normalized_rows}
+        # 'Type2' 컬럼(인덱스 7)에 대해 문자열 강제 포맷팅(') 적용
+        if len(row) > 7 and row[7]:
+            clean_type2 = str(row[7]).replace("과제", "").replace("'", "").strip()
+            row[7] = f"'{clean_type2}"
+
+        # 사유 SSOT 정규화 (인덱스 8)
+        if len(row) > 8 and row[8]:
+            row[8] = normalize_reason_to_ssot(str(row[8]))
+
+        # Date 포맷팅 (인덱스 9): mm/dd hh:mm 형식 보장
+        if len(row) > 9 and row[9]:
+            row[9] = format_date_to_mmdd_hhmm(row[9])
+
+        # K열(Name, 인덱스 10): VLOOKUP 수식 보장
+        row[10] = make_name_vlookup_formula(target_row_num, course=course)
+
+        # 'Subject' 컬럼(인덱스 11) 문자열 포맷팅
+        if len(row) > 11 and row[11]:
+            clean_subject = str(row[11]).lstrip("'")
+            row[11] = f"'{clean_subject}"
+
+        # 분반별 언어 정책: 파이썬(K트랙)은 한글, 웹(E트랙)은 영어
+        if course == "py" and len(row) > 8:
+            row[8] = translate_reason_to_ko(str(row[8]))
+        elif course in ["web", "web1", "web2"] and len(row) > 8:
+            row[8] = translate_reason_to_en(str(row[8]))
+
+        formatted_rows.append(row[:13])
+
+    range_name = f"{sheet_title}!A:M"  # A~M열 13열 데이터 기준으로 append
+    body = {"values": formatted_rows}
 
     print(
-        f"📝 구글 시트 '{sheet_title}' 탭에 {len(normalized_rows)}개의 데이터 추가를 시도합니다..."
+        f"📝 구글 시트 '{sheet_title}' 탭에 {len(formatted_rows)}개의 데이터 추가를 시도합니다..."
     )
 
     try:
@@ -855,6 +965,8 @@ def append_grades_to_sheet(rows_data, course="py"):
         print(
             f"✅ 구글 시트 업데이트 완료: 성공적으로 {updated_rows}개 행이 추가되었습니다!"
         )
+        # 시트 서식 적용
+        apply_score_sheet_formatting(service, spreadsheet_id, target_gid)
         return True
 
     except Exception as e:
@@ -863,11 +975,12 @@ def append_grades_to_sheet(rows_data, course="py"):
 
 
 def upsert_grades_to_sheet(rows_data, course="py"):
-    """
-    (StudentID, Type1, Type2) 복합 키를 기준으로 멱등성(Idempotency)을 보장하는 Upsert 함수.
+    """(StudentID, Type1, Type2) 복합 키를 기준으로 멱등성(Idempotency)을 보장하는 Upsert 함수.
+
     - 기존 행에 동일한 (학번, 대분류, 세부유형)이 존재하면 해당 행을 갱신(Update).
     - 존재하지 않으면 최하단에 신규 추가(Append).
     - 스크립트를 N번 실행해도 중복 데이터가 누적되지 않음.
+    - E열(환산점수 수식) 및 K열(Name VLOOKUP 수식)을 절대 덮어쓰지 않고 보존함.
     """
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -911,13 +1024,17 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         print(f"❌ 오류: 시트 ID(gid={target_gid})를 찾을 수 없습니다.")
         return False
 
-    # 기존 시트의 전체 데이터 읽기 (2행부터 A~M)
+    # 기존 시트의 전체 데이터 읽기 (2행부터 A~M, 수식을 유지하기 위해 valueRenderOption="FORMULA" 필수)
     range_all = f"{sheet_title}!A2:M"
     try:
         res = (
             service.spreadsheets()
             .values()
-            .get(spreadsheetId=spreadsheet_id, range=range_all)
+            .get(
+                spreadsheetId=spreadsheet_id,
+                range=range_all,
+                valueRenderOption="FORMULA",
+            )
             .execute()
         )
         existing_rows = res.get("values", [])
@@ -925,35 +1042,40 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         print(f"⚠️ 기존 데이터 조회 실패: {e}")
         existing_rows = []
 
-    # 기존 행 중 M열(Scaled Score) 수식이 비어 있는 행 일괄 보정
-    missing_m_updates = []
+    # 기존 행 중 E열(Scaled Score) 또는 K열(Name VLOOKUP) 수식이 누락된 행 일괄 보정
+    missing_formula_updates = []
     for idx, r in enumerate(existing_rows):
         r_num = idx + 2
         if len(r) > 1 and str(r[1]).strip():
-            if len(r) <= 12 or not str(r[12]).strip():
-                formula = make_scaled_score_formula(r_num)
-                missing_m_updates.append(
-                    {"range": f"{sheet_title}!M{r_num}", "values": [[formula]]}
+            # E열(Scaled Score) 수식 점검
+            if len(r) <= 4 or not str(r[4]).strip().startswith("="):
+                formula_scaled = make_scaled_score_formula(r_num)
+                missing_formula_updates.append(
+                    {"range": f"{sheet_title}!E{r_num}", "values": [[formula_scaled]]}
                 )
-    if missing_m_updates:
+            # K열(Name) VLOOKUP 수식 점검
+            if len(r) <= 10 or not str(r[10]).strip().startswith("="):
+                formula_name = make_name_vlookup_formula(r_num, course=course)
+                missing_formula_updates.append(
+                    {"range": f"{sheet_title}!K{r_num}", "values": [[formula_name]]}
+                )
+
+    if missing_formula_updates:
         try:
             service.spreadsheets().values().batchUpdate(
                 spreadsheetId=spreadsheet_id,
                 body={
                     "valueInputOption": "USER_ENTERED",
-                    "data": missing_m_updates,
+                    "data": missing_formula_updates,
                 },
             ).execute()
             print(
-                f"🔧 M열(Scaled Score) 수식 누락 {len(missing_m_updates)}개 행 자동 보정 완료"
+                f"🔧 수식(E열 환산점수 / K열 Name VLOOKUP) 누락 {len(missing_formula_updates)}개 셀 자동 보정 완료"
             )
         except Exception as e:
-            print(f"⚠️ M열 수식 자동 보정 실패: {e}")
+            print(f"⚠️ 수식 자동 보정 실패: {e}")
 
     # 기존 데이터 인덱싱: (student_id_last3, type1, type2) -> row_number (idx + 2)
-    # ⚠️ 학번은 반드시 끝 3자리로 정규화하여 비교해야 함.
-    #    시트에는 '857 (3자리)로 저장되어 있고, 새 데이터는 2026300857 (10자리)로 들어오므로
-    #    정규화하지 않으면 다른 키로 인식되어 중복이 발생함 (이전 버그의 근본 원인).
     def _normalize_sid(raw: str) -> str:
         """학번 문자열을 끝 3자리로 정규화 (키 비교 전용)."""
         clean = str(raw).replace("'", "").strip()
@@ -961,7 +1083,13 @@ def upsert_grades_to_sheet(rows_data, course="py"):
 
     key_to_row_num = {}
     for idx, row in enumerate(existing_rows):
-        if len(row) > 6:  # 11열 기준: ID=2, Type1=5, Type2=6
+        # 13열 기준: ID=2, Type1=6, Type2=7
+        if len(row) > 7:
+            sid = _normalize_sid(row[2])
+            t1 = str(row[6]).strip()
+            t2 = str(row[7]).replace("과제", "").replace("'", "").strip()
+            key_to_row_num[(sid, t1, t2)] = idx + 2
+        elif len(row) > 6:  # 구 11열 기준 호환: ID=2, Type1=5, Type2=6
             sid = _normalize_sid(row[2])
             t1 = str(row[5]).strip()
             t2 = str(row[6]).replace("과제", "").replace("'", "").strip()
@@ -972,15 +1100,15 @@ def upsert_grades_to_sheet(rows_data, course="py"):
             t2 = str(row[4]).replace("과제", "").replace("'", "").strip()
             key_to_row_num[(sid, t1, t2)] = idx + 2
 
-    # 새 데이터 포맷팅 및 업데이트 / 신규 추가 분류
     rows_to_update = []  # (row_number, formatted_row)
     rows_to_append = []
 
     max_no = get_max_no(service, spreadsheet_id, sheet_title)
-    normalized_rows = [normalize_row_to_11cols(r) for r in rows_data]
 
-    for row in normalized_rows:
-        # 주차(wk) 컬럼(인덱스 1)에 대해, 항상 숫자(int)로 저장하여 정렬 일관성 보장
+    for r_in in rows_data:
+        row = normalize_row_to_13cols(r_in, course=course)
+
+        # 주차(wk) 컬럼(인덱스 1)에 대해 숫자(int) 보장
         if len(row) > 1 and row[1]:
             try:
                 row[1] = int(str(row[1]).strip().replace("'", ""))
@@ -999,62 +1127,56 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         if len(row) > 3 and row[3]:
             row[3] = normalize_track(row[3])
 
-        # 키 비교용 학번은 끝 3자리로 정규화
         sid_key = _normalize_sid(clean_id)
 
-        # Type1
-        t1 = str(row[5]).strip() if len(row) > 5 else "hw"
-        row[5] = t1
+        # Type1 (인덱스 6)
+        t1 = str(row[6]).strip() if len(row) > 6 and row[6] else "hw"
+        row[6] = t1
 
-        # Type2 포맷팅 (인덱스 6)
-        if len(row) > 6 and row[6]:
-            clean_type2 = str(row[6]).replace("과제", "").replace("'", "").strip()
-            row[6] = f"'{clean_type2}"
+        # Type2 포맷팅 (인덱스 7)
+        if len(row) > 7 and row[7]:
+            clean_type2 = str(row[7]).replace("과제", "").replace("'", "").strip()
+            row[7] = f"'{clean_type2}"
         else:
             clean_type2 = ""
 
-        # Subject 포맷팅 (인덱스 10)
-        if len(row) > 10 and row[10]:
-            clean_subject = str(row[10]).lstrip("'")
-            row[10] = f"'{clean_subject}"
-
-        # 점수 스케일 환산:
-        # - 실습 과제(lab): score 탭에는 루브릭 만점 점수(원점수: 9점, 10점 등) 그대로 기록
-        # - 이메일 과제(hw) 및 기타: 1.0점 만점 스케일 적용 (SSOT 정책 준수)
-        if len(row) > 4 and row[4] != "":
-            t1_val = row[5] if len(row) > 5 else ""
-            if is_lab_assignment(t1_val, clean_type2):
-                # 실습 과제는 루브릭 원점수 그대로 유지 (grade 탭 환산 시 3.0점 스케일 적용)
+        # F열 원점수 (Score, 인덱스 5)
+        if len(row) > 5 and row[5] != "":
+            if is_lab_assignment(t1, clean_type2):
                 pass
             else:
-                row[4] = convert_score_to_1scale(str(row[4]))
-            # 숫자는 float로 변환하여 구글 시트 숫자 인식 및 우측 정렬 보장
+                row[5] = convert_score_to_1scale(str(row[5]))
             try:
-                row[4] = float(row[4])
+                row[5] = float(row[5])
             except (ValueError, TypeError):
                 pass
 
-        # Date 포맷팅 (인덱스 8): mm/dd hh:mm 형식 보장
-        if len(row) > 8 and row[8]:
-            row[8] = format_date_to_mmdd_hhmm(row[8])
+        # Date 포맷팅 (인덱스 9): mm/dd hh:mm 형식 보장
+        if len(row) > 9 and row[9]:
+            row[9] = format_date_to_mmdd_hhmm(row[9])
 
-        # 사유 SSOT 정규화: 2점 스케일 사유 → 표준 사유 (언어 변환 전에 적용)
-        if len(row) > 7 and row[7]:
-            row[7] = normalize_reason_to_ssot(str(row[7]))
+        # 사유 SSOT 정규화 (인덱스 8)
+        if len(row) > 8 and row[8]:
+            row[8] = normalize_reason_to_ssot(str(row[8]))
 
         # 분반별 언어 정책: 파이썬(K트랙)은 한글, 웹(E트랙)은 영어
-        if course == "py" and len(row) > 7:
-            row[7] = translate_reason_to_ko(str(row[7]))
-        elif course in ["web", "web1", "web2"] and len(row) > 7:
-            row[7] = translate_reason_to_en(str(row[7]))
+        if course == "py" and len(row) > 8:
+            row[8] = translate_reason_to_ko(str(row[8]))
+        elif course in ["web", "web1", "web2"] and len(row) > 8:
+            row[8] = translate_reason_to_en(str(row[8]))
+
+        # Subject 포맷팅 (인덱스 11)
+        if len(row) > 11 and row[11]:
+            clean_subject = str(row[11]).lstrip("'")
+            row[11] = f"'{clean_subject}"
 
         key = (sid_key, t1, clean_type2)
 
-        while len(row) < 11:
+        while len(row) < 13:
             row.append("")
 
         if key in key_to_row_num:
-            # 기존 행 갱신 (No는 기존 행의 No 유지, L/M열 유지 또는 보정)
+            # 기존 행 갱신 (No 유지, E열 수식 보존, K열 수식 보존, M열 Appeal 보존)
             existing_row_num = key_to_row_num[key]
             existing_row_idx = existing_row_num - 2
             existing_data = (
@@ -1067,26 +1189,35 @@ def upsert_grades_to_sheet(rows_data, course="py"):
                 if len(existing_data) > 0 and existing_data[0] != ""
                 else row[0]
             )
-            existing_appeal = existing_data[11] if len(existing_data) > 11 else ""
             existing_scaled = (
-                existing_data[12]
-                if len(existing_data) > 12 and str(existing_data[12]).strip()
+                existing_data[4]
+                if (len(existing_data) > 4 and str(existing_data[4]).startswith("="))
                 else make_scaled_score_formula(existing_row_num)
             )
+            existing_name = (
+                existing_data[10]
+                if (len(existing_data) > 10 and str(existing_data[10]).startswith("="))
+                else make_name_vlookup_formula(existing_row_num, course=course)
+            )
+            existing_appeal = existing_data[12] if len(existing_data) > 12 else ""
 
             row[0] = existing_no
-            row_13 = row[:11] + [existing_appeal, existing_scaled]
-            rows_to_update.append((existing_row_num, row_13))
+            row[4] = existing_scaled
+            row[10] = existing_name
+            row[12] = existing_appeal
+
+            rows_to_update.append((existing_row_num, row[:13]))
         else:
-            # 신규 추가 (13열 구조: L열 빈칸, M열 수식 자동 주입)
+            # 신규 추가 (13열 구조: E열 수식 주입, K열 VLOOKUP 수식 주입, M열 빈칸)
             max_no += 1
             row[0] = max_no
             new_append_row_num = len(existing_rows) + 2 + len(rows_to_append)
-            formula = make_scaled_score_formula(new_append_row_num)
-            row_13 = row[:11] + ["", formula]
-            rows_to_append.append(row_13)
-            # ⚠️ 같은 배치 내에서도 중복 방지: 신규 추가 키를 즉시 등록
-            key_to_row_num[key] = -1  # sentinel (append이므로 row_num은 불확정)
+            row[4] = make_scaled_score_formula(new_append_row_num)
+            row[10] = make_name_vlookup_formula(new_append_row_num, course=course)
+            row[12] = ""
+            rows_to_append.append(row[:13])
+            # 같은 배치 내 중복 방지
+            key_to_row_num[key] = -1
 
     success = True
 
