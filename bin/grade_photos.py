@@ -19,11 +19,7 @@ import urllib.request
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from modules.sheet_updater import (
-    get_sheet_service,
-    load_course_config,
-    get_target_sheet_title,
-)
+from modules.sheet_updater import upsert_grades_to_sheet
 
 # ──────────────────────────────────────────────────────────────────────
 # 앨범 URL (SSOT: 1docs/sheets.md)
@@ -267,158 +263,6 @@ def build_score_rows(
 
 
 # ──────────────────────────────────────────────────────────────────────
-# 역순 삽입 upsert (최신 데이터가 헤더 바로 아래 = 맨 위)
-# ──────────────────────────────────────────────────────────────────────
-
-
-def upsert_top_insert(rows_data: list[list], course: str) -> bool:
-    """
-    기존 시트 데이터를 읽어 (StudentID, Type1, Type2) 키로 upsert.
-    - 행 번호는 계속 증가 (기존 행 번호 유지, 신규 행은 max+1부터 순차 부여)
-    - 11열 구조 (A~K) 준수
-    """
-    config = load_course_config(BASE_DIR, course)
-    if not config:
-        print(f"❌ '{course}' 설정 없음")
-        return False
-
-    spreadsheet_id = config.get("sheet_id")
-    target_gid = config.get("target_gid")
-    if not spreadsheet_id or target_gid is None:
-        print(f"❌ '{course}' sheet_id 또는 target_gid 오류")
-        return False
-
-    service = get_sheet_service(BASE_DIR)
-    sheet_title = get_target_sheet_title(service, spreadsheet_id, target_gid)
-    if not sheet_title:
-        print(f"❌ gid={target_gid} 탭 없음")
-        return False
-
-    # 기존 데이터 읽기 (헤더 제외, A2부터 K까지)
-    res = (
-        service.spreadsheets()
-        .values()
-        .get(spreadsheetId=spreadsheet_id, range=f"{sheet_title}!A2:K")
-        .execute()
-    )
-    existing_rows: list[list] = res.get("values", [])
-
-    # (sid, type1, type2) → existing_row 인덱스
-    key_to_idx: dict[tuple, int] = {}
-    for idx, row in enumerate(existing_rows):
-        if len(row) > 6:  # 11열 기준: ID=2, Type1=5, Type2=6
-            sid = str(row[2]).strip().lstrip("'")
-            t1 = str(row[5]).strip()
-            ctype = str(row[6]).lstrip("'").replace("과제", "").strip()
-            key_to_idx[(sid, t1, ctype)] = idx
-        elif len(row) > 4:  # 9열 기준 호환: ID=1, Type=4
-            sid = str(row[1]).strip().lstrip("'")
-            ctype = str(row[4]).lstrip("'").replace("과제", "").strip()
-            key_to_idx[(sid, "hw", ctype)] = idx
-
-    # 현재 최대 번호 파악 (번호는 계속 증가)
-    max_no = 0
-    for row in existing_rows:
-        try:
-            no = int(str(row[0]).strip())
-            if no > max_no:
-                max_no = no
-        except (ValueError, IndexError):
-            pass
-
-    # 새 행 처리
-    new_rows = list(existing_rows)  # 복사
-
-    for row in rows_data:
-        # 11열 정규화
-        if len(row) == 9:
-            (
-                no_val,
-                sid_val,
-                trk_val,
-                scr_val,
-                typ_val,
-                rsn_val,
-                dt_val,
-                nm_val,
-                sbj_val,
-            ) = row
-            row = [
-                no_val,
-                "1",
-                sid_val,
-                trk_val,
-                scr_val,
-                "hw",
-                typ_val,
-                rsn_val,
-                dt_val,
-                nm_val,
-                sbj_val,
-            ]
-        elif len(row) < 11:
-            row = list(row) + [""] * (11 - len(row))
-
-        sid = str(row[2]).strip().lstrip("'")
-        t1 = str(row[5]).strip()
-        clean_type = str(row[6]).lstrip("'").replace("과제", "").strip()
-        key = (sid, t1, clean_type)
-
-        # ID 포맷팅
-        row[2] = f"'{sid}"
-        # Type2 포맷팅 (구글 시트 자동변환 방지)
-        row[6] = f"'{clean_type}"
-        # Subject 포맷팅
-        if len(row) > 10:
-            row[10] = f"'{str(row[10]).lstrip(chr(39))}"
-
-        if key in key_to_idx:
-            # 기존 행 갱신 (no 유지)
-            idx = key_to_idx[key]
-            existing_no = new_rows[idx][0] if new_rows[idx] else ""
-            row[0] = existing_no
-            new_rows[idx] = row
-        else:
-            # 신규 행: max_no+1부터 순차 부여
-            max_no += 1
-            row[0] = max_no
-            new_rows.append(row)
-
-    if not new_rows:
-        print("ℹ️  기록할 데이터 없음")
-        return True
-
-    # 번호 내림차순 정렬 (큰 번호 = 최신 = 맨 위)
-    def sort_key(r: list) -> int:
-        try:
-            return -int(str(r[0]).strip())
-        except (ValueError, IndexError):
-            return 0
-
-    new_rows.sort(key=sort_key)
-
-    added_count = len(new_rows) - len(existing_rows)
-    print(
-        f"📝 '{sheet_title}' 탭 전체 갱신: {len(new_rows)}행"
-        f" (신규 {added_count}행 추가, 번호 {max_no - added_count + 1}~{max_no})"
-    )
-
-    # 헤더 이후 전체 덮어쓰기
-    try:
-        service.spreadsheets().values().update(
-            spreadsheetId=spreadsheet_id,
-            range=f"{sheet_title}!A2:K{len(new_rows) + 1}",
-            valueInputOption="USER_ENTERED",
-            body={"values": new_rows},
-        ).execute()
-        print("✅ 완료")
-        return True
-    except Exception as e:
-        print(f"❌ 시트 갱신 실패: {e}")
-        return False
-
-
-# ──────────────────────────────────────────────────────────────────────
 # main
 # ──────────────────────────────────────────────────────────────────────
 
@@ -444,22 +288,22 @@ def grade_course(course: str, dry_run: bool) -> None:
 
     rows = build_score_rows(course, students, uploaders, today)
 
-    # dry-run 출력
-    submitted = [r for r in rows if r[3] == "1.00"]
-    not_submitted = [r for r in rows if r[3] == "0.00"]
+    # dry-run 출력 (11열 기준: 인덱스 4=score, 2=sid, 7=reason)
+    submitted = [r for r in rows if r[4] == "1.00"]
+    not_submitted = [r for r in rows if r[4] == "0.00"]
     print(f"\n  ✅ 제출: {len(submitted)}명")
     for r in submitted:
-        print(f"    {r[1]} {r[7]}")
+        print(f"    {r[2]} {r[7]}")
     print(f"\n  ❌ 미제출: {len(not_submitted)}명")
     for r in not_submitted:
-        print(f"    {r[1]} {r[7]}")
+        print(f"    {r[2]} {r[7]}")
 
     if dry_run:
         print("\n  [DRY-RUN] 시트에 반영하지 않습니다.")
         return
 
     print("\n  시트에 반영 중...")
-    upsert_top_insert(rows, course)
+    upsert_grades_to_sheet(rows, course=course)
 
 
 def main() -> None:
