@@ -30,11 +30,44 @@ class TestParseGmailDate:
         result = parse_gmail_date("Thu, Oct 1, 2026, 10:55 PM")
         assert result is not None
         assert result.tzinfo is not None
-        # dateutil가 이 형식에서 PM을 처리하지 못하는 경우가 있음
-        # 핵심: 파싱 자체가 성공하고 KST 타임존이 부여되는지 검증
         assert result.month == 10
         assert result.day == 1
+        assert result.hour == 22
         assert result.minute == 55
+
+    @pytest.mark.parametrize(
+        "raw,hour",
+        [
+            ("Fri, Oct 2, 2026, 1:05 PM", 13),
+            ("Fri, Oct 2, 2026, 1:05 AM", 1),
+            ("Oct 2, 2026, 12:05 PM", 12),
+            ("Oct 2, 2026, 12:05 AM", 0),
+        ],
+    )
+    def test_english_am_pm_hour(self, raw, hour):
+        assert parse_gmail_date(raw) == datetime(2026, 10, 2, hour, 5, tzinfo=KST)
+
+    def test_web2_afternoon_submission_is_after_class_start(self, monkeypatch):
+        from bin import auto_grade_email as engine
+
+        monkeypatch.setattr(
+            engine,
+            "get_deadline_dt",
+            lambda *args: datetime(2026, 10, 2, 0, 15, tzinfo=KST),
+        )
+        monkeypatch.setattr(
+            engine,
+            "get_late_cutoff_dt",
+            lambda *args: datetime(2026, 10, 5, 13, 0, tzinfo=KST),
+        )
+        score, _, _, _ = evaluate_submission(
+            "Assignment 0.5 2026000123",
+            "https://example.test/submission",
+            {"id": "2026000123", "track": "2"},
+            parse_gmail_date("Mon, Oct 5, 2026, 1:05 PM"),
+            "0.5",
+        )
+        assert score == 0.0
 
     def test_rfc2822_with_timezone(self):
         """UTC 타임존 포함 → KST 변환."""

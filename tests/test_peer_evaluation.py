@@ -50,3 +50,40 @@ def test_final_score_normalized():
     assert round(sub_ratio, 2) == 0.40
     assert round(eval_ratio, 2) == 0.10
     assert round(total, 2) == 0.50
+
+
+def test_question_majorities_can_differ_from_every_full_answer():
+    evals = [("123", [5, 1, 0]), ("124", [5, 0, 1]), ("125", [0, 1, 1])]
+    majority, has_majority, total = calculate_majority_vote(evals)
+    assert majority == (5, 1, 1)
+    assert has_majority is True
+    assert total == 7.0
+    points = calculate_evaluator_points(evals, majority, {"123": 3, "124": 3, "125": 3})
+    assert points == pytest.approx({"123": 2 / 3, "124": 2 / 3, "125": 2 / 3})
+
+
+def test_majority_ties_are_resolved_per_question():
+    majority, has_majority, total = calculate_majority_vote(
+        [("123", [5, 0]), ("124", [0, 1])]
+    )
+    assert majority == (5, 1)
+    assert has_majority is False
+    assert total == 6
+
+
+def test_inconsistent_question_counts_stop_grading():
+    with pytest.raises(ValueError):
+        calculate_majority_vote([("123", [5, 1]), ("124", [5])])
+
+
+def test_one_completed_review_out_of_three_earns_one_point():
+    points = calculate_evaluator_points([("123", [5, 1])], (5, 1), {"123": 3})
+    assert points == {"123": 1.0}
+    _, participation, _ = normalize_final_scores(0, points["123"], 6)
+    assert participation == pytest.approx(0.2 / 3)
+
+
+@pytest.mark.parametrize("counts", [{}, {"123": 0}])
+def test_unknown_assignment_count_stops_grading(counts):
+    with pytest.raises(ValueError):
+        calculate_evaluator_points([("123", [5, 1])], (5, 1), counts)

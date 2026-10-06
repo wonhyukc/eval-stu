@@ -15,6 +15,9 @@ def test_build_track_map_returns_dict():
         # Check if known files produced mapping
         first_key = list(track_map.keys())[0]
         assert track_map[first_key] in [
+            "1",
+            "2",
+            "4",
             "py",
             "wb",
             "468",

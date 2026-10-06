@@ -6,6 +6,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.lab_submission_parser import (
     parse_korean_timestamp,
+    parse_english_timestamp,
+    parse_timestamp,
     deduplicate_submissions,
 )
 
@@ -123,3 +125,62 @@ def test_deduplicate_submissions_only_after_deadline():
     assert res[0]["status"] == "Late"
     assert res[0]["url"] == "https://late_latest"
     assert res[0]["total_attempts"] == 2
+
+
+def test_parse_english_timestamp():
+    dt1 = parse_english_timestamp("Sep 24, 2026, 4:08:02 PM")
+    assert dt1 == datetime(2026, 9, 24, 16, 8, 2)
+
+    dt2 = parse_english_timestamp("September 24, 2026 4:08:02 PM")
+    assert dt2 == datetime(2026, 9, 24, 16, 8, 2)
+
+    dt3 = parse_english_timestamp("Sep 24, 2026, 12:30:00 AM")
+    assert dt3 == datetime(2026, 9, 24, 0, 30, 0)
+
+    assert parse_english_timestamp("") is None
+    assert parse_english_timestamp("invalid") is None
+
+
+def test_parse_timestamp_both_formats():
+    assert parse_timestamp("2026. 9. 24 오후 4:08:02") == datetime(
+        2026, 9, 24, 16, 8, 2
+    )
+    assert parse_timestamp("Sep 24, 2026, 4:08:02 PM") == datetime(
+        2026, 9, 24, 16, 8, 2
+    )
+
+
+def test_deduplicate_submissions_reverse_sorted():
+    """입력이 역순으로 되어있어도 timestamp 기준으로 최신을 가져오는지 확인"""
+    roster = [{"학번": "2026300869", "성명": "MIN"}]
+    deadline = datetime(2026, 9, 21, 9, 0, 0)
+    rows = [
+        ["2026. 9. 17 오후 1:02:45", "a@a.com", "869", "https://latest", "", "3", "04"],
+        [
+            "2026. 9. 14 오전 11:32:21",
+            "a@a.com",
+            "869",
+            "https://second",
+            "",
+            "3",
+            "04",
+        ],
+        ["2026. 9. 14 오전 11:12:38", "a@a.com", "869", "https://first", "", "3", "04"],
+    ]
+    res = deduplicate_submissions(rows, roster, deadline)
+    assert len(res) == 1
+    assert res[0]["status"] == "On-time"
+    assert res[0]["url"] == "https://latest"
+    assert res[0]["total_attempts"] == 3
+
+
+def test_deduplicate_submissions_unparseable_date_with_deadline():
+    """파싱 불가능한 날짜는 deadline이 있으면 Late로 간주"""
+    roster = [{"학번": "2026300861", "성명": "SON"}]
+    deadline = datetime(2026, 9, 28, 9, 0, 0)
+    rows = [
+        ["invalid_date_format", "a@a.com", "861", "https://invalid", "", "4", "04"],
+    ]
+    res = deduplicate_submissions(rows, roster, deadline)
+    assert len(res) == 1
+    assert res[0]["status"] == "Late"

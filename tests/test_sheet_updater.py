@@ -417,16 +417,20 @@ def test_make_scaled_score_formula():
     from modules.sheet_updater import make_scaled_score_formula
 
     formula_172 = make_scaled_score_formula(172)
-    assert (
-        formula_172
-        == '=IF(H172="lab", IF(B172=3, ROUND((F172/9)*3, 2), ROUND((F172/10)*3, 2)), F172)'
+    expected_172 = (
+        '=IF(OR(LOWER(H172)="lab", REGEXMATCH(UPPER(H172), "^L[0-9]")), '
+        "ROUND((F172/IFS(B172=3, 9, B172=4, 10, TRUE, 10))*3, 2), "
+        "F172)"
     )
+    assert formula_172 == expected_172
 
     formula_193 = make_scaled_score_formula(193)
-    assert (
-        formula_193
-        == '=IF(H193="lab", IF(B193=3, ROUND((F193/9)*3, 2), ROUND((F193/10)*3, 2)), F193)'
+    expected_193 = (
+        '=IF(OR(LOWER(H193)="lab", REGEXMATCH(UPPER(H193), "^L[0-9]")), '
+        "ROUND((F193/IFS(B193=3, 9, B193=4, 10, TRUE, 10))*3, 2), "
+        "F193)"
     )
+    assert formula_193 == expected_193
 
 
 def test_make_name_vlookup_formula():
@@ -462,7 +466,7 @@ def test_normalize_row_to_13cols():
     assert row_13[1] == "3"  # wk
     assert row_13[2] == "2026300123"  # ID
     assert row_13[3] == "1"  # Track
-    assert row_13[4].startswith("=IF(H10=")  # Scaled Score 수식 (E열)
+    assert row_13[4].startswith("=IF(OR(")  # Scaled Score 수식 (E열)
     assert row_13[5] == 10.0  # Score 원점수 (F열)
     assert row_13[6] == "hw"  # Type1 (G열)
     assert row_13[7] == "lab"  # Type2 (H열)
@@ -695,7 +699,7 @@ def test_upsert_grades_to_sheet_formula_preservation():
 
     mock_service.spreadsheets().values().update.side_effect = mock_update
 
-    # 동일한 키('123', 'hw', '0.2')로 점수 및 사유 변경 요청
+    # 동일한 키('123', 2주차, 'hw', '0.2')로 점수 및 사유 변경 요청
     test_update = [
         [
             1,
@@ -732,6 +736,207 @@ def test_upsert_grades_to_sheet_formula_preservation():
     assert updated_row[4] == existing_row[4]
     assert updated_row[5] == 0.9  # 원점수 업데이트
     assert updated_row[10] == existing_row[10]  # VLOOKUP 보존
+
+
+@pytest.fixture
+def upsert_sheet(monkeypatch):
+    """가짜 시트에 실제 upsert의 읽기·추가·갱신 결과를 누적한다."""
+    from unittest.mock import MagicMock
+    from modules import sheet_updater
+
+    stored_rows = []
+    service = MagicMock()
+    values = service.spreadsheets().values()
+
+    def read_rows(**kwargs):
+        data = (
+            [[row[0]] for row in stored_rows]
+            if kwargs["range"] == "score!A:A"
+            else [list(row) for row in stored_rows]
+        )
+        return MagicMock(execute=MagicMock(return_value={"values": data}))
+
+    def append_rows(**kwargs):
+        stored_rows.extend(list(row) for row in kwargs["body"]["values"])
+        return MagicMock(execute=MagicMock(return_value={}))
+
+    def update_row(**kwargs):
+        row_num = int(kwargs["range"].split("!A")[1].split(":")[0])
+        assert 2 <= row_num < len(stored_rows) + 2
+        stored_rows[row_num - 2] = list(kwargs["body"]["values"][0])
+        return MagicMock(execute=MagicMock(return_value={}))
+
+    values.get.side_effect = read_rows
+    values.append.side_effect = append_rows
+    values.update.side_effect = update_row
+    monkeypatch.setattr(
+        sheet_updater,
+        "load_course_config",
+        lambda *args: {"sheet_id": "fake", "target_gid": 1},
+    )
+    monkeypatch.setattr(sheet_updater, "get_sheet_service", lambda *args: service)
+    monkeypatch.setattr(sheet_updater, "get_target_sheet_title", lambda *args: "score")
+    monkeypatch.setattr(sheet_updater, "sort_sheet_remote", MagicMock())
+    monkeypatch.setattr(sheet_updater, "apply_score_sheet_formatting", MagicMock())
+    return sheet_updater.upsert_grades_to_sheet, stored_rows, values
+
+
+def _lab_row(week, score):
+    return [0, week, "2026000123", "1", "", score, "hw", "lab", "", "", "", "", ""]
+
+
+@pytest.mark.parametrize("course", ["py", "web1", "web2"])
+@pytest.mark.parametrize("failed_range", ["score!A2:M", "score!A:A"])
+def test_upsert_read_failure_stops_all_writes_and_retry_preserves_records(
+    upsert_sheet, course, failed_range
+):
+    from copy import deepcopy
+    from modules import sheet_updater
+
+    sync, rows, values = upsert_sheet
+    existing = _lab_row(3, 9)
+    existing[0] = 17
+    rows.append(existing)
+    before = deepcopy(rows)
+    normal_read = values.get.side_effect
+
+    def failing_read(**kwargs):
+        if kwargs["range"] == failed_range:
+            raise RuntimeError("모의 API 조회 실패")
+        return normal_read(**kwargs)
+
+    values.get.side_effect = failing_read
+    incoming = [_lab_row(3, 8), _lab_row(4, 10)]
+    assert sync(incoming, course=course) is False
+    assert rows == before
+    values.append.assert_not_called()
+    values.update.assert_not_called()
+    values.batchUpdate.assert_not_called()
+    sheet_updater.sort_sheet_remote.assert_not_called()
+    sheet_updater.apply_score_sheet_formatting.assert_not_called()
+
+    values.get.side_effect = normal_read
+    assert sync(incoming, course=course)
+    assert len(rows) == 2
+    assert [r[0] for r in rows] == [17, 18]
+    assert [r[5] for r in rows] == [8, 10]
+    values.reset_mock()
+    assert sync(incoming, course=course)
+    values.append.assert_not_called()
+    assert len(rows) == 2
+    assert [r[0] for r in rows] == [17, 18]
+
+
+@pytest.mark.parametrize("failed_read_number", [1, 2])
+def test_append_number_or_row_count_failure_stops_writes_and_retry_uses_new_no(
+    upsert_sheet, failed_read_number
+):
+    from copy import deepcopy
+    from modules import sheet_updater
+
+    _, rows, values = upsert_sheet
+    existing = _lab_row(3, 9)
+    existing[0] = 42
+    rows.append(existing)
+    before = deepcopy(rows)
+    normal_read = values.get.side_effect
+    reads = 0
+
+    def failing_read(**kwargs):
+        nonlocal reads
+        reads += 1
+        if reads == failed_read_number:
+            raise RuntimeError("모의 API 조회 실패")
+        return normal_read(**kwargs)
+
+    values.get.side_effect = failing_read
+    assert (
+        sheet_updater.append_grades_to_sheet([_lab_row(4, 10)], course="web1") is False
+    )
+    assert rows == before
+    values.append.assert_not_called()
+    values.update.assert_not_called()
+    values.batchUpdate.assert_not_called()
+    sheet_updater.sort_sheet_remote.assert_not_called()
+    sheet_updater.apply_score_sheet_formatting.assert_not_called()
+
+    values.get.side_effect = normal_read
+    assert sheet_updater.append_grades_to_sheet([_lab_row(4, 10)], course="web1")
+    assert rows[0] == before[0]
+    assert len(rows) == 2
+    assert rows[1][0] == 43
+
+
+def test_get_max_no_distinguishes_empty_sheet_from_query_failure():
+    from unittest.mock import MagicMock
+    from modules.sheet_updater import get_max_no
+
+    service = MagicMock()
+    request = service.spreadsheets().values().get.return_value
+    request.execute.return_value = {"values": []}
+    assert get_max_no(service, "fake", "score") == 0
+    request.execute.return_value = {"values": [["No"], ["'42"], [7]]}
+    assert get_max_no(service, "fake", "score") == 42
+    request.execute.side_effect = RuntimeError("모의 API 조회 실패")
+    with pytest.raises(RuntimeError, match="저장을 중단"):
+        get_max_no(service, "fake", "score")
+
+
+@pytest.mark.parametrize("course", ["py", "web1", "web2"])
+def test_upsert_next_week_does_not_overwrite_previous_week(upsert_sheet, course):
+    sync, rows, values = upsert_sheet
+    assert sync([_lab_row(3, 9)], course=course)
+    previous = list(rows[0])
+    values.reset_mock()
+
+    assert sync([_lab_row(4, 10)], course=course)
+
+    values.update.assert_not_called()
+    assert len(rows) == 2
+    assert rows[0] == previous
+    assert rows[1][1] == 4
+    assert rows[1][5] == 10.0
+    assert rows[1][0] == previous[0] + 1
+
+
+@pytest.mark.parametrize("course", ["py", "web1", "web2"])
+def test_upsert_multiple_weeks_rerun_updates_each_record(upsert_sheet, course):
+    sync, rows, values = upsert_sheet
+    assert sync([_lab_row(3, 9), _lab_row(4, 10)], course=course)
+    assert len(rows) == 2
+    rows[0][12] = "Appeal week 3"
+    rows[1][12] = "Appeal week 4"
+    preserved = [(r[0], r[4], r[10], r[12]) for r in rows]
+    values.reset_mock()
+
+    # 주차 입력 순서와 학번 길이가 바뀌어도 각각 원래 행만 갱신한다.
+    changed_week3 = _lab_row("'03", 8)
+    changed_week3[2] = "'123"
+    assert sync([_lab_row("4", 7), changed_week3], course=course)
+
+    values.append.assert_not_called()
+    assert [c.kwargs["range"] for c in values.update.call_args_list] == [
+        "score!A3:M3",
+        "score!A2:M2",
+    ]
+    assert len(rows) == 2
+    assert [(r[1], r[5]) for r in rows] == [(3, 8.0), (4, 7.0)]
+    assert [(r[0], r[4], r[10], r[12]) for r in rows] == preserved
+
+
+@pytest.mark.parametrize("existing_week", [3, "3", "03", "'3", 3.0])
+def test_upsert_week_cell_formats_match_same_record(upsert_sheet, existing_week):
+    sync, rows, values = upsert_sheet
+    assert sync([_lab_row(3, 9)])
+    rows[0][1] = existing_week
+    values.reset_mock()
+
+    assert sync([_lab_row("03", 8)])
+
+    values.append.assert_not_called()
+    assert len(rows) == 1
+    assert rows[0][1] == 3
+    assert rows[0][5] == 8.0
 
 
 def test_append_grades_to_sheet_preserves_lab_raw_scores():
@@ -800,3 +1005,167 @@ def test_append_grades_to_sheet_preserves_lab_raw_scores():
     assert appended_rows[0][5] == 10.0
     assert appended_rows[1][5] == 9.0
     assert appended_rows[0][10].startswith("=IFERROR(")
+
+
+def test_upsert_deduplicates_same_batch():
+    from unittest.mock import MagicMock, patch
+    from modules.sheet_updater import upsert_grades_to_sheet
+
+    fake_config = {"sheet_id": "fake_sheet_id", "target_gid": 12345}
+    mock_service = MagicMock()
+    mock_service.spreadsheets().get().execute.return_value = {
+        "sheets": [{"properties": {"sheetId": 12345, "title": "score"}}]
+    }
+    # Mock reading existing rows (empty)
+    mock_service.spreadsheets().values().get().execute.return_value = {"values": []}
+
+    captured_appends = []
+
+    def mock_append(spreadsheetId, range, valueInputOption, insertDataOption, body):
+        captured_appends.append(body.get("values", []))
+        return MagicMock(execute=MagicMock(return_value={"updates": {}}))
+
+    mock_service.spreadsheets().values().append.side_effect = mock_append
+    mock_service.spreadsheets().values().update.return_value.execute.return_value = {}
+    mock_service.spreadsheets().values().batchUpdate.return_value.execute.return_value = (
+        {}
+    )
+
+    rows_data = [
+        # [no, wk, id, track, scaled, score, type1, type2, reason, date, name, subject, appeal]
+        [
+            "",
+            "1",
+            "2026300123",
+            "1",
+            "",
+            "0.5",
+            "hw",
+            "0.2",
+            "First Reason",
+            "",
+            "",
+            "",
+            "",
+        ],
+        [
+            "",
+            "1",
+            "2026300123",
+            "1",
+            "",
+            "1.0",
+            "hw",
+            "0.2",
+            "Second Reason",
+            "",
+            "",
+            "",
+            "",
+        ],
+    ]
+
+    with patch(
+        "modules.sheet_updater.load_course_config", return_value=fake_config
+    ), patch("modules.sheet_updater.get_sheet_service", return_value=mock_service):
+        upsert_grades_to_sheet(rows_data, course="py")
+
+    assert len(captured_appends) == 1
+    appended = captured_appends[0]
+    assert len(appended) == 1
+    row = appended[0]
+
+    # 2nd occurrence wins
+    assert row[5] == 1.0
+    assert row[8] == "Second Reason"
+    # max_no starts at 0 -> becomes 1
+    assert row[0] == 1
+
+
+def test_upsert_max_no_increment_correctly_with_duplicates():
+    from unittest.mock import MagicMock, patch
+    from modules.sheet_updater import upsert_grades_to_sheet
+
+    fake_config = {"sheet_id": "fake_sheet_id", "target_gid": 12345}
+    mock_service = MagicMock()
+    mock_service.spreadsheets().get().execute.return_value = {
+        "sheets": [{"properties": {"sheetId": 12345, "title": "score"}}]
+    }
+    # Mock reading existing rows (1 row, max_no = 1)
+    mock_service.spreadsheets().values().get().execute.return_value = {
+        "values": [
+            [1, "1", "'111", "1", "=IF()", 1.0, "hw", "'0.1", "", "", "=IFERROR()"]
+        ]
+    }
+
+    captured_appends = []
+
+    def mock_append(spreadsheetId, range, valueInputOption, insertDataOption, body):
+        captured_appends.append(body.get("values", []))
+        return MagicMock(execute=MagicMock(return_value={"updates": {}}))
+
+    mock_service.spreadsheets().values().append.side_effect = mock_append
+    mock_service.spreadsheets().values().update.return_value.execute.return_value = {}
+    mock_service.spreadsheets().values().batchUpdate.return_value.execute.return_value = (
+        {}
+    )
+
+    rows_data = [
+        [
+            "",
+            "1",
+            "2026300123",
+            "1",
+            "",
+            "0.5",
+            "hw",
+            "0.2",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ],  # max_no = 2
+        [
+            "",
+            "1",
+            "2026300123",
+            "1",
+            "",
+            "1.0",
+            "hw",
+            "0.2",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ],  # deduped, max_no still 2
+        [
+            "",
+            "1",
+            "2026300124",
+            "1",
+            "",
+            "1.0",
+            "hw",
+            "0.2",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ],  # max_no = 3
+    ]
+
+    with patch(
+        "modules.sheet_updater.load_course_config", return_value=fake_config
+    ), patch("modules.sheet_updater.get_sheet_service", return_value=mock_service):
+        upsert_grades_to_sheet(rows_data, course="py")
+
+    assert len(captured_appends) == 1
+    appended = captured_appends[0]
+
+    assert len(appended) == 2
+    assert appended[0][0] == 2
+    assert appended[1][0] == 3

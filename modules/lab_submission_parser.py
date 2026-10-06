@@ -24,6 +24,37 @@ def parse_korean_timestamp(ts_str: str) -> Optional[datetime]:
     return datetime(int(year), int(month), int(day), hour, int(min_s), int(sec_s))
 
 
+def parse_english_timestamp(ts_str: str) -> Optional[datetime]:
+    """구글 폼 영어 타임스탬프 문자열 파싱 (예: Sep 24, 2026, 4:08:02 PM, September 24, 2026 4:08:02 PM)"""
+    if not ts_str:
+        return None
+    m = re.match(
+        r"([a-zA-Z]+)\s+(\d+),\s+(\d+),?\s+(\d+):(\d+):(\d+)\s+(AM|PM)",
+        str(ts_str).strip(),
+        re.IGNORECASE,
+    )
+    if not m:
+        return None
+    month_str, day_s, year_s, hour_s, min_s, sec_s, ampm = m.groups()
+    try:
+        dt_month = datetime.strptime(month_str[:3], "%b").month
+    except ValueError:
+        return None
+
+    hour = int(hour_s)
+    ampm = ampm.upper()
+    if ampm == "PM" and hour < 12:
+        hour += 12
+    elif ampm == "AM" and hour == 12:
+        hour = 0
+    return datetime(int(year_s), dt_month, int(day_s), hour, int(min_s), int(sec_s))
+
+
+def parse_timestamp(ts_str: str) -> Optional[datetime]:
+    """한국어 또는 영어 타임스탬프 문자열 파싱"""
+    return parse_korean_timestamp(ts_str) or parse_english_timestamp(ts_str)
+
+
 def get_course_deadline(
     course: str, week: str, base_dir: str = "."
 ) -> Optional[datetime]:
@@ -110,11 +141,14 @@ def deduplicate_submissions(
             continue
 
         s_id = str(student_match.get("학번", "")).strip()
-        dt = parse_korean_timestamp(ts_str)
+        dt = parse_timestamp(ts_str)
 
         is_before = True
-        if deadline and dt:
-            is_before = dt < deadline
+        if deadline:
+            if dt:
+                is_before = dt < deadline
+            else:
+                is_before = False
 
         key = (week_clean, s_id)
         if key not in grouped:
@@ -141,11 +175,11 @@ def deduplicate_submissions(
 
         if before:
             # Rule 1: 마감 전 최종본
-            valid = before[-1]
+            valid = max(before, key=lambda s: s["dt"] or datetime.min)
             status = "On-time"
         else:
             # Rule 2: 마감 후 최종본
-            valid = after[-1]
+            valid = max(after, key=lambda s: s["dt"] or datetime.min)
             status = "Late"
 
         student_info = valid["student_info"]
