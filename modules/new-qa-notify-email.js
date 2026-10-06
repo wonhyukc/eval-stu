@@ -16,13 +16,13 @@ const TARGET_SPREADSHEET_IDS = [
  */
 const ALLOWED_SHEET_ORDER = [
   "resource",
-  "progess",
+  "presentation",
+  "progress",
   "Q&A",
   "score",
   "grade",
-  "peer-eval-web",
-  "peer-eval-list",
-  "peer-eval-assignment",
+  "peer-eval-submissions",
+  "peer-eval",
   "agenda"
 ];
 

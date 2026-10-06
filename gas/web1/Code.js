@@ -16,6 +16,7 @@ const TARGET_SPREADSHEET_IDS = [
  */
 const ALLOWED_SHEET_ORDER = [
   "resource",
+  "presentation",
   "progress",
   "Q&A",
   "score",
