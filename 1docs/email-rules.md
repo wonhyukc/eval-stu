@@ -1,1 +1,1 @@
-../../stu2603/1docs/email-rules.md
+../../stu2603/4advices/email-rules.md

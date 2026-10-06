@@ -74,7 +74,7 @@ gcloud iam service-accounts add-iam-policy-binding "my-cicd-sa@[프로젝트_ID]
   --role="roles/iam.workloadIdentityUser" \\
   --member="principalSet://iam.googleapis.com/projects/[프로젝트_번호]/locations/global/workloadIdentityPools/my-github-pool/attribute.repository/my-github-username/my-repo"
 \`\`\`
-*(주의: `[프로젝트_번호]`는 알파벳 ID가 아닌 10~12자리의 순수 숫자로 된 프로젝트 고유 번호입니다.)*
+*(주의: `[프로젝트_번호]`는 알파벳 ID가 아닌 10-12자리의 순수 숫자로 된 프로젝트 고유 번호입니다.)*
 
 > [!NOTE]
 > **💡 프로젝트 번호 확인 방법**

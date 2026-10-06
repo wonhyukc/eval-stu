@@ -47,8 +47,8 @@
 
 ### 1. 시트 헤더: `Type` → `Type1` + `Type2` 분리
 
-**Before**: `No | StudentID | Track | Score | Type | Reason | Date | Name | Subject` (9열, A~I)
-**After**: `No | wk | ID | Track | Score | Type1 | Type2 | Reason | Date | Name | Subject` (11열, A~K)
+**Before**: `No | StudentID | Track | Score | Type | Reason | Date | Name | Subject` (9열, A-I)
+**After**: `No | wk | ID | Track | Score | Type1 | Type2 | Reason | Date | Name | Subject` (11열, A-K)
 
 - `Type1`: 4개 대분류 (`hw`, `class`, `mid`, `fin`)
 - `Type2`: hw일 때만 과제 번호 (`0.x`), 나머지는 빈칸
@@ -78,9 +78,9 @@
 
 | 분반 | 수업 요일/시간 | 지각 마감 (다음 수업 시작 전) |
 |:---:|---|---|
-| **4반 (py)** | 월 09:00~11:50 | **다음 주 월요일 09:00 전** |
-| **2반 (web2)** | 월 13:00~15:50 | **다음 주 월요일 13:00 전** |
-| **1반 (web1)** | 월 16:00~18:45 | **다음 주 월요일 16:00 전** |
+| **4반 (py)** | 월 09:00-11:50 | **다음 주 월요일 09:00 전** |
+| **2반 (web2)** | 월 13:00-15:50 | **다음 주 월요일 13:00 전** |
+| **1반 (web1)** | 월 16:00-18:45 | **다음 주 월요일 16:00 전** |
 
 - 기존 목 23:59 + 15분 유예 → 정상 제출 기한은 유지
 - **지각 인정 기한만 변경**: `48시간 이내(토 23:59)` → `다음 수업 시작 전`
@@ -112,7 +112,7 @@
 
 | # | 파일 | 작업 |
 |:---:|---|---|
-| 3-1 | [`modules/sheet_updater.py`](file:///home/hyuk/prj/stu/eval-stu/modules/sheet_updater.py) | **헤더/컬럼 인덱스 전면 재매핑** — 9열(A~I) → 11열(A~K), Type1/Type2 분리, wk 컬럼 추가, upsert 복합키 `(StudentID, Type1, Type2)`로 변경, range `A:I` → `A:K` |
+| 3-1 | [`modules/sheet_updater.py`](file:///home/hyuk/prj/stu/eval-stu/modules/sheet_updater.py) | **헤더/컬럼 인덱스 전면 재매핑** — 9열(A-I) → 11열(A-K), Type1/Type2 분리, wk 컬럼 추가, upsert 복합키 `(StudentID, Type1, Type2)`로 변경, range `A:I` → `A:K` |
 | 3-2 | [`modules/grader.py`](file:///home/hyuk/prj/stu/eval-stu/modules/grader.py) | 채점 결과에 `type1`, `type2` 필드 분리, 미제출자 0점 행 생성 로직 추가 |
 | 3-3 | [`modules/score_calculator.py`](file:///home/hyuk/prj/stu/eval-stu/modules/score_calculator.py) | 지각 마감 로직 → 다음 수업 시작 시각 기준으로 변경, type → type1/type2 분리 |
 | 3-4 | [`settings.json`](file:///home/hyuk/prj/stu/eval-stu/settings.json) | 분반별 `late_deadline` 시각 추가 (`py: "09:00"`, `web2: "13:00"`, `web1: "16:00"`) |
@@ -130,7 +130,7 @@
 
 ## ⚠️ 주의 사항 및 리스크
 
-1. **시트 호환성**: 이미 시트가 수동으로 11열 구조로 변경됨 → 코드가 아직 9열(A~I) 기준이므로 **즉시 코드 수정 필요** (코드-시트 불일치 상태)
+1. **시트 호환성**: 이미 시트가 수동으로 11열 구조로 변경됨 → 코드가 아직 9열(A-I) 기준이므로 **즉시 코드 수정 필요** (코드-시트 불일치 상태)
 2. **Upsert 복합키 변경**: 기존 `(StudentID, Type)` → `(StudentID, Type1, Type2)` 변경 시 기존 데이터와의 키 매핑 호환성 확인 필요
 3. **0점 등록**: 미제출자 판별을 위해 학생 명단 전체 vs 제출자 리스트 diff 로직 추가 필요
 4. **심볼릭 링크 파일**: `1docs/sheets.md`, `1docs/scores.md`는 `../stu2603` 심볼릭 링크 → 수정 시 원본 저장소 측에서 수정해야 함
