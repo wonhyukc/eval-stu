@@ -1,16 +1,33 @@
 /**
- * 파이썬 4반 성적 시트 정렬 메뉴
- * score 탭을 주차 역순 → 학번 오름차순으로 정렬하고 No를 재부여합니다.
+ * 파이썬 4반 성적 시트 관리 (정렬 + 구조 방어)
+ * score 탭을 주차 역순 → 학번 오름차순으로 정렬하고,
+ * 허용되지 않은 탭 생성을 자동 차단합니다.
  */
 
 const SCORE_TAB_NAME = "score";
 
+/**
+ * 4반 시트 기준 공식 탭 목록 및 고정 순서
+ */
+const ALLOWED_SHEET_ORDER = [
+  "progress",
+  "resource",
+  "발표",
+  "score",
+  "agenda",
+  "상호평가 제출자 답",
+  "grade",
+  "상호평가",
+  "Q&A"
+];
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("관리자 설정")
-    .addItem("⚡ score 자동 정렬 트리거 켜기", "createOnChangeTrigger")
+    .addItem("⚡ 자동 정렬 + 시트 구조 방어(onChange) 트리거 켜기", "createOnChangeTrigger")
     .addSeparator()
     .addItem("🔄 score 탭 정렬 (주차↓ 학번↑)", "sortScoreTab")
+    .addItem("🔄 시트 순서 지금 정렬 및 미허용 탭 삭제", "manualEnforceStructure")
     .addSeparator()
     .addItem("🔒 progress 1-4행 + 고정열 보호 설정", "protectProgressTab")
     .addToUi();
@@ -36,9 +53,16 @@ function createOnChangeTrigger() {
 
 /**
  * 스프레드시트 onChange 통합 핸들러.
- * score 탭 자동 정렬 (API 업로드 후 60초 쓰로틀)
+ * 1) 임의 시트 생성 감지 시 삭제 & 탭 순서 강제 복구
+ * 2) score 탭 자동 정렬 (API 업로드 후 60초 쓰로틀)
  */
 function onSpreadsheetChange(e) {
+  try {
+    enforceWorkbookStructure(e);
+  } catch (err) {
+    console.error("시트 구조 방어 실행 중 오류:", err);
+  }
+
   try {
     autoSortScoreTabSilent();
   } catch (err) {
@@ -171,4 +195,46 @@ function sortScoreTab() {
     `${total}행 정렬 (주차 역순 → 학번 오름차순)\n` +
     "원래 No 번호 유지"
   );
+}
+
+/**
+ * 허용되지 않은 새 시트가 생성되었는지 검사하여 즉시 삭제하고,
+ * 탭 순서가 바뀌었을 경우 ALLOWED_SHEET_ORDER 순서대로 강제 원복합니다.
+ */
+function enforceWorkbookStructure(e) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets();
+
+  // 1. 허용되지 않은 새 시트가 생성되었는지 검사 후 즉시 삭제
+  for (let i = sheets.length - 1; i >= 0; i--) {
+    const sheet = sheets[i];
+    const sheetName = sheet.getName();
+
+    // 공식 목록에 없는 탭(새로 만든 탭)이면 삭제
+    if (!ALLOWED_SHEET_ORDER.includes(sheetName)) {
+      if (ss.getSheets().length > 1) {
+        console.warn(`[구조 방어] 허용되지 않은 탭 감지 및 삭제: ${sheetName}`);
+        ss.deleteSheet(sheet);
+      }
+    }
+  }
+
+  // 2. 탭 순서 강제 원복
+  let targetIndex = 1;
+  ALLOWED_SHEET_ORDER.forEach(name => {
+    const sheet = ss.getSheetByName(name);
+    if (sheet) {
+      sheet.activate();
+      ss.moveActiveSheet(targetIndex);
+      targetIndex++;
+    }
+  });
+}
+
+/**
+ * 관리자 메뉴에서 수동으로 시트 순서 정렬 및 비인가 탭 삭제를 실행합니다.
+ */
+function manualEnforceStructure() {
+  enforceWorkbookStructure(null);
+  SpreadsheetApp.getUi().alert("✅ 탭 순서 정렬 및 미허용 탭 정리가 완료되었습니다.");
 }
