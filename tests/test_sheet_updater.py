@@ -325,3 +325,172 @@ def test_make_scaled_score_formula():
         formula_193
         == '=IF(G193="lab", IF(B193=3, ROUND((E193/9)*3, 2), ROUND((E193/10)*3, 2)), E193)'
     )
+
+
+def test_is_lab_assignment():
+    from modules.sheet_updater import is_lab_assignment
+
+    # 1. 표준 실습 표기
+    assert is_lab_assignment("hw", "lab") is True
+    assert is_lab_assignment("hw", "LAB") is True
+    assert is_lab_assignment("hw", "실습") is True
+    assert is_lab_assignment("lab", "3") is True
+    assert is_lab_assignment("실습", "3") is True
+
+    # 2. 작은따옴표 접두 표기 (시트 포맷팅 후 형태)
+    assert is_lab_assignment("hw", "'lab") is True
+    assert is_lab_assignment("hw", "'LAB") is True
+    assert is_lab_assignment("hw", "'실습") is True
+    assert is_lab_assignment("hw", "'L3") is True
+    assert is_lab_assignment("hw", "'l4") is True
+
+    # 3. 주차별 실습 표기 (L3, L4, L5 등)
+    assert is_lab_assignment("hw", "L3") is True
+    assert is_lab_assignment("hw", "l3") is True
+    assert is_lab_assignment("hw", "L10") is True
+
+    # 4. 이메일 과제 및 일반 과제 (False)
+    assert is_lab_assignment("hw", "0.1") is False
+    assert is_lab_assignment("hw", "'0.1") is False
+    assert is_lab_assignment("hw", "0.4") is False
+    assert is_lab_assignment("hw", "'0.4") is False
+    assert is_lab_assignment("class", "att") is False
+    assert is_lab_assignment("", "") is False
+    assert is_lab_assignment(None, None) is False
+
+
+def test_upsert_grades_to_sheet_preserves_lab_raw_scores():
+    from unittest.mock import MagicMock, patch
+    from modules.sheet_updater import upsert_grades_to_sheet
+
+    fake_config = {
+        "sheet_id": "fake_sheet_id",
+        "target_gid": 12345,
+    }
+
+    mock_service = MagicMock()
+    mock_service.spreadsheets().get().execute.return_value = {
+        "sheets": [{"properties": {"sheetId": 12345, "title": "score"}}]
+    }
+    mock_service.spreadsheets().values().get().execute.return_value = {"values": []}
+
+    captured_appends = []
+
+    def mock_append(spreadsheetId, range, valueInputOption, insertDataOption, body):
+        captured_appends.append(body.get("values", []))
+        return MagicMock(execute=MagicMock(return_value={"updates": {}}))
+
+    mock_service.spreadsheets().values().append.side_effect = mock_append
+
+    test_rows = [
+        [
+            1,
+            "3",
+            "2026300123",
+            "1",
+            10,
+            "hw",
+            "lab",
+            "정상제출",
+            "09/30 10:00",
+            "홍길동",
+            "실습",
+        ],
+        [
+            2,
+            "3",
+            "2026300456",
+            "1",
+            9,
+            "hw",
+            "L3",
+            "정상제출",
+            "09/30 10:00",
+            "김철수",
+            "실습",
+        ],
+    ]
+
+    with patch(
+        "modules.sheet_updater.load_course_config", return_value=fake_config
+    ), patch(
+        "modules.sheet_updater.get_sheet_service", return_value=mock_service
+    ), patch(
+        "modules.sheet_updater.sort_sheet_remote", return_value=True
+    ), patch(
+        "modules.sheet_updater.apply_score_sheet_formatting", return_value=None
+    ):
+        result = upsert_grades_to_sheet(test_rows, course="web1")
+
+    assert result is True
+    assert len(captured_appends) == 1
+    appended_rows = captured_appends[0]
+    assert len(appended_rows) == 2
+    # Score(인덱스 4)가 10.0과 9.0으로 그대로 보존되었는지 검증 (5.0, 4.5로 반토막 나지 않음)
+    assert appended_rows[0][4] == 10.0
+    assert appended_rows[1][4] == 9.0
+
+
+def test_append_grades_to_sheet_preserves_lab_raw_scores():
+    from unittest.mock import MagicMock, patch
+    from modules.sheet_updater import append_grades_to_sheet
+
+    fake_config = {
+        "sheet_id": "fake_sheet_id",
+        "target_gid": 12345,
+    }
+
+    mock_service = MagicMock()
+    mock_service.spreadsheets().get().execute.return_value = {
+        "sheets": [{"properties": {"sheetId": 12345, "title": "score"}}]
+    }
+    mock_service.spreadsheets().values().get().execute.return_value = {"values": []}
+
+    captured_appends = []
+
+    def mock_append(spreadsheetId, range, valueInputOption, insertDataOption, body):
+        captured_appends.append(body.get("values", []))
+        return MagicMock(execute=MagicMock(return_value={"updates": {}}))
+
+    mock_service.spreadsheets().values().append.side_effect = mock_append
+
+    test_rows = [
+        [
+            1,
+            "3",
+            "2026300123",
+            "1",
+            10,
+            "hw",
+            "lab",
+            "정상제출",
+            "09/30 10:00",
+            "홍길동",
+            "실습",
+        ],
+        [
+            2,
+            "3",
+            "2026300456",
+            "1",
+            9,
+            "hw",
+            "'L3",
+            "정상제출",
+            "09/30 10:00",
+            "김철수",
+            "실습",
+        ],
+    ]
+
+    with patch(
+        "modules.sheet_updater.load_course_config", return_value=fake_config
+    ), patch("modules.sheet_updater.get_sheet_service", return_value=mock_service):
+        result = append_grades_to_sheet(test_rows, course="web1")
+
+    assert result is True
+    assert len(captured_appends) == 1
+    appended_rows = captured_appends[0]
+    assert len(appended_rows) == 2
+    assert appended_rows[0][4] == 10.0
+    assert appended_rows[1][4] == 9.0

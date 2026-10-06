@@ -381,6 +381,21 @@ REASON_2SCALE_TO_SSOT = {
 }
 
 
+def is_lab_assignment(t1: Any, t2: Any) -> bool:
+    """Type1 또는 Type2를 검사하여 실습(Lab) 과제 여부를 판정합니다.
+
+    작은따옴표('), 접두어, 대소문자에 영향받지 않고 안전하게 판별합니다.
+    예: Type1="hw", Type2="lab" 또는 "L3", "'lab", "'L3", "실습" 등
+    """
+    clean_t1 = str(t1 or "").replace("'", "").strip().lower()
+    clean_t2 = str(t2 or "").replace("과제", "").replace("'", "").strip().lower()
+    return (
+        clean_t1 in ("lab", "실습")
+        or clean_t2 in ("lab", "실습")
+        or clean_t2.startswith("l")
+    )
+
+
 def convert_score_to_1scale(score_str: str) -> str:
     """2점 만점 스케일 점수를 1.0점 만점으로 환산.
 
@@ -792,18 +807,19 @@ def append_grades_to_sheet(rows_data, course="py"):
         # 점수 스케일 환산:
         # - 실습 과제(lab): score 탭에는 루브릭 만점 점수(원점수: 9점, 10점 등) 그대로 기록
         # - 이메일 과제(hw) 및 기타: 1.0점 만점 스케일 적용 (SSOT 정책 준수)
-        if len(row) > 4 and row[4]:
-            t1_val = str(row[5]).strip().lower() if len(row) > 5 and row[5] else ""
-            t2_val = str(row[6]).strip().lower() if len(row) > 6 and row[6] else ""
-            if (
-                t1_val in ("lab", "실습")
-                or t2_val in ("lab", "실습")
-                or t2_val.startswith("l")
-            ):
+        if len(row) > 4 and row[4] != "":
+            t1_val = row[5] if len(row) > 5 else ""
+            t2_val = row[6] if len(row) > 6 else ""
+            if is_lab_assignment(t1_val, t2_val):
                 # 실습 과제는 루브릭 원점수 그대로 유지 (grade 탭 환산 시 3.0점 스케일 적용)
                 pass
             else:
                 row[4] = convert_score_to_1scale(str(row[4]))
+            # 숫자는 float로 변환하여 구글 시트 숫자 인식 및 우측 정렬 보장
+            try:
+                row[4] = float(row[4])
+            except (ValueError, TypeError):
+                pass
         # 사유 SSOT 정규화: 2점 스케일 사유 → 표준 사유 (언어 변환 전에 적용)
         if len(row) > 7 and row[7]:
             row[7] = normalize_reason_to_ssot(str(row[7]))
@@ -1006,13 +1022,8 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         # - 실습 과제(lab): score 탭에는 루브릭 만점 점수(원점수: 9점, 10점 등) 그대로 기록
         # - 이메일 과제(hw) 및 기타: 1.0점 만점 스케일 적용 (SSOT 정책 준수)
         if len(row) > 4 and row[4] != "":
-            t1_val = str(row[5]).strip().lower() if len(row) > 5 and row[5] else ""
-            t2_val = str(row[6]).strip().lower() if len(row) > 6 and row[6] else ""
-            if (
-                t1_val in ("lab", "실습")
-                or t2_val in ("lab", "실습")
-                or t2_val.startswith("l")
-            ):
+            t1_val = row[5] if len(row) > 5 else ""
+            if is_lab_assignment(t1_val, clean_type2):
                 # 실습 과제는 루브릭 원점수 그대로 유지 (grade 탭 환산 시 3.0점 스케일 적용)
                 pass
             else:
