@@ -8,13 +8,20 @@ def fetch_assignment_emails(query_string, max_results=100):
     """
     service = get_gmail_service()
 
-    results = (
+    messages = []
+    page_size = min(max_results, 500) if max_results else 500
+    request = (
         service.users()
         .messages()
-        .list(userId="me", q=query_string, maxResults=max_results)
-        .execute()
+        .list(userId="me", q=query_string, maxResults=page_size)
     )
-    messages = results.get("messages", [])
+    while request is not None:
+        results = request.execute()
+        messages.extend(results.get("messages", []))
+        if max_results and len(messages) >= max_results:
+            messages = messages[:max_results]
+            break
+        request = service.users().messages().list_next(request, results)
 
     email_data = []
 

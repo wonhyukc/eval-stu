@@ -1,3 +1,7 @@
+"""
+[DEPRECATED] 이 모듈은 구형 채점 시스템의 유산입니다.
+"""
+
 import re
 from datetime import datetime
 import email.utils
@@ -5,6 +9,7 @@ import email.utils
 
 def parse_email_date(date_str):
     """
+    [DEPRECATED] 레거시 함수입니다.
     이메일 헤더의 Date 문자열을 파싱하여 datetime 객체(로컬 시간 기준)로 반환합니다.
     """
     time_tuple = email.utils.parsedate_tz(date_str)
@@ -15,6 +20,8 @@ def parse_email_date(date_str):
 
 def grade_assignment(email_data, assignment_no, deadline_datetime=None):
     """
+    [DEPRECATED] 이 함수는 과거 3점 만점 채점 시스템을 사용합니다.
+    현재 학기(1.0점 스케일)에서는 사용하지 마세요.
     개별 이메일 데이터를 기반으로 과제 0.4 기준의 3점 만점 채점을 수행합니다.
     """
     subject = email_data.get("subject", "")

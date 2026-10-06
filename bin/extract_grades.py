@@ -264,8 +264,8 @@ def extract_grades(
         if not name:
             name = sender_str.split("<")[0].strip(' "')
 
-        # 4. 학번 파싱 (이미지의 경우 2026300096 등 10자리 숫자이므로 \d{8,11} 매칭)
-        match = re.search(r"\d{8,11}", subject)
+        # 4. 학번 파싱 (이미지의 경우 2026300096 등 10자리 숫자이므로 \d{3,10} 매칭)
+        match = re.search(r"\d{3,10}", subject)
         student_id = match.group(0) if match else ""
 
         # 이름/이메일로 학번 찾기 (제목에 학번이 없는 경우)
@@ -361,7 +361,7 @@ def extract_grades(
                     task_regex_part = task_num.replace(".", r"\.") if task_num else ""
 
                 exact_title_re = re.compile(
-                    rf"^(과제|assignment)0?\.?{task_regex_part}(\d{{8,11}})$",
+                    rf"^(과제|assignment)0?\.?{task_regex_part}(\d{{3,10}})$",
                     re.IGNORECASE,
                 )
                 is_exact_title = bool(exact_title_re.match(clean_sub))

@@ -38,6 +38,13 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from modules.sheet_updater import upsert_grades_to_sheet
+from modules.email_submission import (
+    INSTRUCTOR_EMAIL,
+    OriginalSubmissionError,
+    deduplicate_submissions,
+    parse_submission_datetime,
+    select_original_submission,
+)
 
 # ── 상수 ──────────────────────────────────────────────────
 KST = timezone(timedelta(hours=9))
@@ -90,21 +97,53 @@ def calculate_current_task() -> str:
 
 
 def get_deadline_dt(task_id: str) -> datetime:
-    """과제 번호로부터 마감 시각 계산 (목 23:59 + 15분 유예 = 금 00:15 KST)."""
-    wk_num = int(task_id.split(".")[1])
-    # wk1 시작 = 2026-08-31 (월), 해당 주의 목요일 = +3일
-    wk_start = SEMESTER_START + timedelta(weeks=wk_num - 1)
-    thu = wk_start + timedelta(days=3)  # 목요일
+    """과제 번호로부터 마감 시각 계산 (5input/deadline.csv 기준 + 15분 유예)."""
+    wk_num = str(int(task_id.split(".")[1]))
+    csv_path = BASE_DIR / "5input" / "deadline.csv"
+    if csv_path.exists():
+        import csv
+
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if str(row.get("week", "")).strip() == wk_num:
+                    email_dl = str(row.get("email-deadline", "")).strip()
+                    if email_dl:
+                        year = datetime.now(KST).year
+                        dt = datetime.strptime(f"{year}/{email_dl}", "%Y/%m/%d %H:%M")
+                        dt = dt.replace(tzinfo=KST)
+                        return dt + timedelta(minutes=15)
+
+    # fallback
+    wk_num_int = int(task_id.split(".")[1])
+    wk_start = SEMESTER_START + timedelta(weeks=wk_num_int - 1)
+    thu = wk_start + timedelta(days=3)
     deadline = thu.replace(hour=23, minute=59, second=0) + timedelta(minutes=16)
     return deadline
 
 
 def get_late_cutoff_dt(task_id: str, track: str) -> datetime:
     """트랙별 지각 마감 시각 (다음 월요일 수업 시작 시각)."""
-    wk_num = int(task_id.split(".")[1])
-    wk_start = SEMESTER_START + timedelta(weeks=wk_num - 1)
-    next_mon = wk_start + timedelta(days=7)  # 다음 주 월요일
+    wk_num = str(int(task_id.split(".")[1]))
     hour = LATE_CUTOFF_HOURS.get(track, 16)
+    csv_path = BASE_DIR / "5input" / "deadline.csv"
+    if csv_path.exists():
+        import csv
+
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if str(row.get("week", "")).strip() == wk_num:
+                    lab_dl = str(row.get("lab-deadline", "")).strip()
+                    if lab_dl:
+                        year = datetime.now(KST).year
+                        dt = datetime.strptime(f"{year}/{lab_dl}", "%Y/%m/%d")
+                        return dt.replace(hour=hour, minute=0, second=0, tzinfo=KST)
+
+    # fallback
+    wk_num_int = int(task_id.split(".")[1])
+    wk_start = SEMESTER_START + timedelta(weeks=wk_num_int - 1)
+    next_mon = wk_start + timedelta(days=7)  # 다음 주 월요일
     return next_mon.replace(hour=hour, minute=0, second=0)
 
 
@@ -186,16 +225,24 @@ def parse_gmail_date(
         return None
     raw = date_str.strip()
 
-    # 1차 시도: email.utils (RFC 2822 / 표준 날짜 형식)
-    try:
-        dt = email.utils.parsedate_to_datetime(raw)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=KST)
-        else:
-            dt = dt.astimezone(KST)
-        return dt
-    except Exception:
-        pass
+    # Gmail UI의 AM/PM은 RFC 파서가 무시하므로 먼저 명시적으로 해석한다.
+    has_am_pm = bool(re.search(r"\b(?:AM|PM)\b", raw, re.IGNORECASE))
+    if has_am_pm:
+        dt = parse_submission_datetime(raw)
+        if dt is not None:
+            return dt
+
+    # 1차 시도: email.utils (RFC 2822 / 표준 날짜 형식, AM/PM 없는 경우만)
+    if not has_am_pm:
+        try:
+            dt = email.utils.parsedate_to_datetime(raw)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=KST)
+            else:
+                dt = dt.astimezone(KST)
+            return dt
+        except Exception:
+            pass
 
     # 2차 시도: dateutil.parser (영어 구문 e.g. 'Sep 28, 2026, 9:20 AM')
     try:
@@ -249,19 +296,9 @@ def evaluate_submission(
 ) -> tuple[float, str, str, str]:
     """채점 로직 (1docs/score-email.md SSOT 준수)."""
     # 1. 순수 본문 검증
-    body_lines = body_text.splitlines()
-    pure_lines = []
-    for line in body_lines:
-        s = line.strip()
-        if (
-            s.startswith(">")
-            or s.startswith("wrote:")
-            or "đã viết:" in s
-            or "작성:" in s
-        ):
-            continue
-        pure_lines.append(s)
-    pure_body = "\n".join(pure_lines).strip()
+    from modules.email_submission import strip_gmail_quotes
+
+    pure_body = strip_gmail_quotes(body_text)
     pure_len = len(re.sub(r"\s+", "", pure_body))
     has_url = bool(re.search(r"https?://\S+", pure_body))
 
@@ -290,10 +327,10 @@ def evaluate_submission(
                 f"정규마감: {deadline_dt.strftime('%Y-%m-%d %H:%M:%S %Z')} | "
                 f"지각마감: {late_cutoff_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}"
             )
-        if email_dt > late_cutoff_dt:
+        if email_dt >= late_cutoff_dt:
             if log:
                 log.info(
-                    f"   [채점판정] 지각마감초과 ({email_dt} > {late_cutoff_dt}) → 0.0점"
+                    f"   [채점판정] 지각마감초과 ({email_dt} >= {late_cutoff_dt}) → 0.0점"
                 )
             return (
                 0.0,
@@ -312,7 +349,13 @@ def evaluate_submission(
                 log.info(f"   [채점판정] 정규기한내제출 ({email_dt} <= {deadline_dt})")
     else:
         if log:
-            log.warning("   [기한검사] email_dt 없음(파싱실패 등) → 정시 기준으로 처리")
+            log.warning("   [기한검사] email_dt 없음(파싱실패 등) → 리뷰 필요 처리")
+        return (
+            0.7,
+            "Time unknown - needs review",
+            "시각 식별 불가 - 리뷰 필요",
+            "Needs manual check for sent_at",
+        )
 
     # 3. 제목 검사
     clean_sub = re.sub(
@@ -688,9 +731,17 @@ def run_grading(
             wk_start = SEMESTER_START + timedelta(weeks=wk_num - 1)
             search_after = wk_start.strftime("%Y/%m/%d")
             if target_student_id:
+                target_email = students_by_id.get(target_student_id, {}).get(
+                    "email", ""
+                )
+                student_query = (
+                    f"(from:{target_email} OR {target_student_id})"
+                    if target_email
+                    else target_student_id
+                )
                 search_query = (
                     f'("{task_num}" OR "과제 {task_num}" OR "assignment {task_num}") '
-                    f"{target_student_id} after:{search_after} -from:comments-noreply@docs.google.com"
+                    f"{student_query} after:{search_after} -from:comments-noreply@docs.google.com"
                 )
             else:
                 search_query = (
@@ -802,7 +853,9 @@ def run_grading(
                                     and sid_found.endswith(student_filter)
                                 ):
                                     fast_match = True
-                            if not fast_match:
+                            # 제목에서 다른 학생으로 확정된 경우만 건너뛴다.
+                            # 학번 없는 최신 제출은 상세 발신자 이메일로 확인해야 한다.
+                            if m_id and not fast_match:
                                 log.info(
                                     f"   [{idx + 1}/{row_count}] ⏭️ 고속 스킵 "
                                     f"'{subject}' ({sender_name})"
@@ -838,10 +891,6 @@ def run_grading(
                         log.warning(
                             f"   [{idx + 1}/{row_count}] ⚠️ 목록 행 파싱 오류: {e}"
                         )
-
-                # 단독 학생 필터 시 수집 완료되면 다음 페이지 불필요
-                if target_student_id and len(thread_metas) > 0:
-                    break
 
                 # 다음 페이지 버튼 확인
                 dismiss_popups(page, log)
@@ -881,7 +930,6 @@ def run_grading(
             for t_idx, meta in enumerate(thread_metas):
                 subject = meta["subject"]
                 sender_name = meta["sender_name"]
-                date_str = meta["date_str"]
                 thread_id = meta["thread_id"]
 
                 log.info(f"\n--- [스레드 {t_idx + 1}/{len(thread_metas)}] ---")
@@ -917,6 +965,14 @@ def run_grading(
                     page.wait_for_timeout(2500)
                     dismiss_popups(page, log)
 
+                    expand = page.locator(
+                        '[aria-label="Expand all"], [aria-label="모든 메일 펼치기"], '
+                        '[aria-label="모두 펼치기"], [data-tooltip="Expand all"], '
+                        '[data-tooltip="모두 펼치기"]'
+                    )
+                    if expand.count() and expand.first.is_visible():
+                        expand.first.click()
+
                     messages = page.locator("div.adn.ads")
                     msg_count = messages.count()
                     log.info(
@@ -931,11 +987,11 @@ def run_grading(
                         m = messages.nth(m_idx)
                         s_email_el = m.locator("span.gD")
                         s_email = (
-                            s_email_el.get_attribute("email")
+                            (s_email_el.get_attribute("email") or "")
                             if s_email_el.count() > 0
                             else ""
                         )
-                        if "wonhyukc@stu.ac.kr" in s_email.lower():
+                        if s_email.strip().lower() == INSTRUCTOR_EMAIL:
                             is_replied = True
                         else:
                             body_el = m.locator("div.a3s.aiL")
@@ -957,18 +1013,16 @@ def run_grading(
                                 }
                             )
 
-                    # 학생 원본 메시지 기준 추출 (교수 답장 시각 오염 방지)
-                    if student_msgs:
-                        student_submission_msg = student_msgs[0]
-                        last_sender_email = student_submission_msg["sender_email"]
-                        last_msg_body = student_submission_msg["body"]
-                        last_msg_date_str = (
-                            student_submission_msg["date_str"] or date_str
-                        )
-                    else:
-                        last_sender_email = ""
-                        last_msg_body = ""
-                        last_msg_date_str = date_str
+                    # 기본 채점기와 동일한 공통 규칙으로 스레드 내 제출본을 선택한다.
+                    student_submission_msg = select_original_submission(
+                        student_msgs, get_deadline_dt(task_id), wk_start
+                    )
+                    if student_submission_msg is None:
+                        stats["skipped"] += 1
+                        continue
+                    last_sender_email = student_submission_msg["sender_email"]
+                    last_msg_body = student_submission_msg["body"]
+                    last_msg_date_str = student_submission_msg["date_str"]
 
                     # 학번 추출
                     extracted_sid = None
@@ -1037,22 +1091,14 @@ def run_grading(
                         )
 
                     # 날짜 파싱
-                    email_dt = parse_gmail_date(last_msg_date_str, log=log)
-                    formatted_date = datetime.now(KST).strftime("%-m/%-d")
-                    if email_dt:
-                        formatted_date = email_dt.strftime("%-m/%-d")
-                        dt_str = email_dt.strftime("%Y-%m-%d %H:%M:%S %Z")
-                        log.info(
-                            f"   📅 발송일시: {dt_str} "
-                            f"(표시: {formatted_date}, "
-                            f"원본: '{last_msg_date_str}')"
-                        )
-                    else:
-                        log.warning(
-                            f"   ⚠️ 발송일시 파싱 실패 "
-                            f"(원본: '{last_msg_date_str}') "
-                            f"→ 금일 날짜({formatted_date})로 기록"
-                        )
+                    email_dt = student_submission_msg["sent_at"]
+                    formatted_date = email_dt.strftime("%-m/%-d")
+                    dt_str = email_dt.strftime("%Y-%m-%d %H:%M:%S %Z")
+                    log.info(
+                        f"   📅 발송일시: {dt_str} "
+                        f"(표시: {formatted_date}, "
+                        f"원본: '{last_msg_date_str}')"
+                    )
 
                     score, reason_en, reason_ko, details = evaluate_submission(
                         subject,
@@ -1083,34 +1129,27 @@ def run_grading(
                             "is_replied": is_replied,
                             "last_msg_body": last_msg_body,
                             "thread_url": thread_url,
+                            "student_id": extracted_sid,
+                            "task_id": task_id,
+                            "sent_at": email_dt,
                         }
                     )
 
-                    # 단독 학생 필터 처리 시 1건 수집되면 즉시 종료
-                    if target_student_id and len(collected) > 0:
-                        log.info(
-                            f"🎯 타겟 학생({target_student_id}) "
-                            f"수집 완료 → 순회 종료"
-                        )
-                        break
-
+                except OriginalSubmissionError:
+                    # 시각을 모르는 제출본을 건너뛰면 잘못된 과거 제출본을 고를 수 있다.
+                    raise
                 except Exception as thread_err:
                     log.warning(
                         f"   ⚠️ 스레드 처리 중 오류 (스킵 후 계속): " f"{thread_err}"
                     )
                     stats["failed"] += 1
 
-            # Step 3: 중복 제거 (학생별 최고점 유지)
+            # Step 3: 공통 모듈에서 학생·과제별 원본 발송 시각으로 제출본 선택
             log.info("\n🚀 [Step 3] 학생별 중복 제거...")
-            deduped = {}
-            for sub in collected:
-                sid = sub["extracted_sid"]
-                if not sid or not sub["student_info"]:
-                    continue
-                if sid not in deduped or sub["score"] > deduped[sid]["score"]:
-                    deduped[sid] = sub
-
-            final_list = list(deduped.values())
+            final_list = deduplicate_submissions(
+                [s for s in collected if s["extracted_sid"] and s["student_info"]],
+                get_deadline_dt(task_id),
+            )
             log.info(f"✅ 유효 제출: {len(final_list)}명")
 
             # B-4: 수집률 정합성 검증 — 초기 검색 건수 대비 수집률 확인

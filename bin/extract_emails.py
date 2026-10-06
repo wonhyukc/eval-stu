@@ -15,6 +15,13 @@ if base_dir not in sys.path:
     sys.path.append(base_dir)
 
 from modules.sheet_updater import normalize_track, format_date_to_mmdd_hhmm
+from modules.email_submission import (
+    INSTRUCTOR_EMAIL,
+    OriginalSubmissionError,
+    deduplicate_submissions,
+    has_valid_submission_body,
+    select_original_submission,
+)
 
 KST = timezone(timedelta(hours=9))
 
@@ -248,24 +255,29 @@ def send_single_reply(page, item: dict, task_id: str, id_to_names: dict) -> bool
     url = f"https://mail.google.com/mail/u/0/#search/{quote(target_q)}"
 
     try:
-        page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_timeout(2500)
-
-        rows = page.locator("tr.zA:visible")
-        if rows.count() == 0:
-            # 폴백: 학번 단독 검색
-            url_fb = f"https://mail.google.com/mail/u/0/#search/{quote(sid)}"
-            page.goto(url_fb, wait_until="domcontentloaded", timeout=30000)
+        selected_thread = item.get("thread_url")
+        if selected_thread:
+            page.goto(selected_thread, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_selector("div.adn.ads", state="attached", timeout=10000)
+        else:
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
             page.wait_for_timeout(2500)
+
             rows = page.locator("tr.zA:visible")
+            if rows.count() == 0:
+                # 폴백: 학번 단독 검색
+                url_fb = f"https://mail.google.com/mail/u/0/#search/{quote(sid)}"
+                page.goto(url_fb, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(2500)
+                rows = page.locator("tr.zA:visible")
 
-        if rows.count() == 0:
-            print(f"      ❌ 답장 대상 메일을 찾을 수 없음: {sid}")
-            return False
+            if rows.count() == 0:
+                print(f"      ❌ 답장 대상 메일을 찾을 수 없음: {sid}")
+                return False
 
-        # 첫 번째 가시 행 클릭 진입
-        rows.first.click(timeout=10000)
-        page.wait_for_timeout(2000)
+            # 첫 번째 가시 행 클릭 진입
+            rows.first.click(timeout=10000)
+            page.wait_for_timeout(2000)
 
         # 이미 교수 답장이 있는지 재확인 (이중 안전장치)
         sender_spans = page.locator("span.gD")
@@ -470,6 +482,73 @@ def sync_csv_to_sheet(csv_path):
     print("\n✅ 시트 동기화 완료")
 
 
+def read_original_submission(page, row, grace_deadline=None, start_time=None):
+    """스레드를 열어 개별 메시지 헤더를 읽고 원래 검색 목록으로 돌아온다."""
+    search_url = page.url
+    try:
+        row.click(timeout=10000)
+        page.wait_for_selector("div.adn.ads", state="attached", timeout=10000)
+        expand = page.locator(
+            '[aria-label="Expand all"], [aria-label="모든 메일 펼치기"], '
+            '[aria-label="모두 펼치기"], [data-tooltip="Expand all"], '
+            '[data-tooltip="모두 펼치기"]'
+        )
+        if expand.count() and expand.first.is_visible():
+            expand.first.click()
+
+        message_elements = page.locator("div.adn.ads")
+        messages = []
+        for idx in range(message_elements.count()):
+            element = message_elements.nth(idx)
+            sender = element.locator("span.gD[email], span.g2[email]")
+            date = element.locator("span.g3")
+            sender_email = (
+                (sender.first.get_attribute("email") or "") if sender.count() else ""
+            )
+            body_html = ""
+            if sender_email.strip().lower() != INSTRUCTOR_EMAIL:
+                body = element.locator("div.a3s.aiL")
+                body.first.wait_for(state="attached", timeout=10000)
+                body_html = body.first.inner_html()
+            messages.append(
+                {
+                    "sender_email": sender_email,
+                    "sender_name": (
+                        (
+                            sender.first.get_attribute("name")
+                            or sender.first.inner_text()
+                        )
+                        if sender.count()
+                        else ""
+                    ),
+                    "date_str": (
+                        (date.first.get_attribute("title") or date.first.inner_text())
+                        if date.count()
+                        else ""
+                    ),
+                    "body_html": body_html,
+                }
+            )
+        if not messages:
+            raise OriginalSubmissionError("스레드의 원본 메시지를 찾을 수 없습니다.")
+        selected = select_original_submission(messages, grace_deadline, start_time)
+        if selected is not None:
+            selected["thread_url"] = page.url
+        return selected
+    except OriginalSubmissionError:
+        raise
+    except Exception as exc:
+        raise OriginalSubmissionError(
+            "원본 메시지 상세 정보를 읽지 못했습니다."
+        ) from exc
+    finally:
+        try:
+            page.goto(search_url, wait_until="domcontentloaded")
+            page.wait_for_selector("tr.zA", timeout=10000)
+        except Exception as exc:
+            raise OriginalSubmissionError("검색 목록으로 돌아오지 못했습니다.") from exc
+
+
 def extract_gmail_interactive(
     target_week=None,
     allowed_tracks=None,
@@ -495,10 +574,10 @@ def extract_gmail_interactive(
     )
 
     # Build regex based on target_week
-    week_str = f"0?\\.{target_week}" if target_week else r"0?\.(\d+)"
+    week_str = f"0?\\.{target_week}" if target_week else r"0?\.?\d+"
 
     strict_re = re.compile(
-        rf"(과제|assignment)\s*{week_str}\s*(?:\[|\()?(\d{{10}})(?:\]|\))?",
+        rf"(?:과제|assignment|homework)\s*(?P<week>{week_str})\s*(?:\[|\()?(?P<sid>\d{{3,10}})(?:\]|\))?",
         re.IGNORECASE,
     )
     any_assignment_re = re.compile(rf"(과제|assignment|{week_str})", re.IGNORECASE)
@@ -582,108 +661,34 @@ def extract_gmail_interactive(
         count = rows.count()
         print(f"총 {count}개의 검색된 이메일을 발견했습니다.")
 
-        seen_ids = set()
-
         for i in range(count):
             row = rows.nth(i)
             try:
                 sub_loc = row.locator("span.bog")
                 subject = sub_loc.inner_text().strip() if sub_loc.count() > 0 else ""
 
-                sender_loc = row.locator("div.yW span[name]")
-                sender = ""
-                has_instructor_reply = False
-                if sender_loc.count() > 0:
-                    for s_idx in range(sender_loc.count()):
-                        s_candidate = (
-                            sender_loc.nth(s_idx).get_attribute("name")
-                            or sender_loc.nth(s_idx).inner_text()
-                        )
-                        s_lower = s_candidate.lower()
-                        if (
-                            "me" in s_lower
-                            or "wonhyukc@stu.ac.kr" in s_lower
-                            or s_candidate.strip() == "나"
-                            or ", 나" in s_candidate
-                            or "나," in s_candidate
-                        ):
-                            has_instructor_reply = True
-                        elif not sender:
-                            sender = s_candidate
-                    if not sender:
-                        sender = (
-                            sender_loc.first.get_attribute("name")
-                            or sender_loc.first.inner_text()
-                        )
-                else:
-                    sender = ""
-
-                # 추가 방어: div.yW 발신자 영역 전체 텍스트에서 '나' 또는 'me' 검사
-                yw_loc = row.locator("div.yW")
-                if yw_loc.count() > 0:
-                    yw_text = yw_loc.first.inner_text()
-                    if re.search(
-                        r"(?:^|[,\s])(?:나|me)(?:[,\s]|$)", yw_text, re.IGNORECASE
-                    ):
-                        has_instructor_reply = True
-
-                date_loc = row.locator("td.xW span")
-                date_str = (
-                    date_loc.first.get_attribute("title")
-                    if date_loc.count() > 0
-                    else ""
-                )
-
-                if not date_str and date_loc.count() > 0:
-                    date_str = date_loc.first.inner_text()
-                if not date_str:
-                    date_str = "Thu, 9 Apr 2026 12:00:00 +0900"
-
-                # Exclude purely professor emails (only if no student sender exists)
-                sender_lower = sender.lower()
-                if not has_instructor_reply and (
-                    "me" == sender_lower or "wonhyukc@stu.ac.kr" in sender_lower
-                ):
-                    print(f" -> 발신자(본인 단독) 제외: {date_str} ({subject})")
-                    continue
-
-                email_dt = None
-                try:
-                    email_dt = email.utils.parsedate_to_datetime(date_str)
-                    if email_dt.tzinfo is None:
-                        email_dt = email_dt.replace(tzinfo=timezone.utc).astimezone(KST)
-                    else:
-                        email_dt = email_dt.astimezone(KST)
-                except Exception:
-                    pass
-
-                # 지각 판정: 답장 스레드인 경우 td.xW는 교수 답장 시각일 수 있으므로 오판 방어
-                has_thread_reply = (
-                    has_instructor_reply
-                    or row.locator("span.e2").count() > 0
-                    or row.locator("span.bqe").count() > 0
-                )
-
-                is_late = False
-                if email_dt and email_dt > grace_dt:
-                    if has_thread_reply:
-                        print(
-                            f" -> [주의] 답장 스레드 감지: 목록 날짜({date_str})는 교수 답장 시각일 수 있음 ({subject})"
-                        )
-                    else:
-                        is_late = True
-
-                # Exclude emails before start_dt (Just in case the query fetched older ones)
-                if email_dt and email_dt < start_dt and not has_thread_reply:
-                    print(f" -> 기간 이전 제외: {date_str} ({subject})")
-                    continue
-
                 has_att = (
                     row.locator("img.yE").count() > 0
                     or row.locator('[aria-label="Attachment"]').count() > 0
                     or "Attachment" in row.inner_html()
                 )
+                submission = read_original_submission(page, row, grace_dt, start_dt)
+                if submission is None:
+                    print(f" -> 학생 원본 메시지 없는 스레드 제외: {subject}")
+                    continue
+                sender = submission["sender_name"] or submission["sender_email"]
+                date_str = submission["date_str"]
+                email_dt = submission["sent_at"]
+                has_thread_reply = submission["is_replied"]
+                is_late = email_dt > grace_dt
+                if email_dt < start_dt:
+                    print(f" -> 기간 이전 제외: {date_str} ({subject})")
+                    continue
 
+            except OriginalSubmissionError:
+                # 확인 실패를 정시/0점으로 추측하거나 부분 결과를 저장하지 않는다.
+                context.close()
+                raise
             except Exception as _e:
                 print(f"Row {i} 파싱 에러: {_e}")
                 continue
@@ -695,21 +700,19 @@ def extract_gmail_interactive(
             # Extra check: if no week target provided, find week from strict_re or assume general
             found_week = target_week
             if not target_week and m_strict:
-                found_week = m_strict.group(2) if len(m_strict.groups()) > 1 else None
+                week_match = m_strict.group("week")
+                found_week = re.sub(r"^0?\.?", "", week_match) if week_match else None
 
             est_id = ""
-            # If target_week is fixed, group(2) is the ID.
-            # If target_week is not fixed, group(1) is the week, group(2) is the ID.
-            if target_week:
-                est_id = m_strict.group(2) if m_strict else ""
-            else:
-                est_id = (
-                    m_strict.group(2) if m_strict and len(m_strict.groups()) > 1 else ""
-                )
+            if m_strict:
+                est_id = m_strict.group("sid")
 
             if not est_id:
                 clean_name = re.sub(r"\s+", "", sender).lower()
-                if clean_name in name_to_id:
+                sender_email = submission["sender_email"].strip().lower()
+                if sender_email in name_to_id:
+                    est_id = name_to_id[sender_email]
+                elif clean_name in name_to_id:
                     est_id = name_to_id[clean_name]
                 else:
                     m_id = re.search(r"\d{10}", subject)
@@ -721,13 +724,6 @@ def extract_gmail_interactive(
                 t_str = str(target_id).strip()
                 if not (est_id == t_str or est_id.endswith(t_str)):
                     continue
-
-            # Deduplication: Keep only the most recent email per student ID
-            if est_id:
-                if est_id in seen_ids:
-                    print(f" -> 중복 제외 (과거 메일 무시): {est_id} ({sender})")
-                    continue
-                seen_ids.add(est_id)
 
             track_num = id_to_track.get(est_id, "")
 
@@ -763,6 +759,14 @@ def extract_gmail_interactive(
                 score = 0.0
                 reason = "Cannot identify student ID" if is_web else "학번 식별 불가"
                 task_type = "기타"
+            elif not has_valid_submission_body(submission["body_html"]):
+                score = 0.0
+                reason = (
+                    "Empty Body / Quoted Text Only"
+                    if is_web
+                    else "본문 미작성(단순 회신)"
+                )
+                task_type = f"0.{found_week}" if found_week else "기타"
             elif is_past_late:
                 score = 0.0
                 reason = (
@@ -898,6 +902,10 @@ def extract_gmail_interactive(
                 "이름": sender,
                 "메일제목": subject,
                 "is_replied": bool(has_thread_reply),
+                "student_id": est_id,
+                "task_id": task_type,
+                "sent_at": email_dt,
+                "thread_url": submission.get("thread_url", ""),
             }
             new_rows.append(row_data)
             late_mark = " [지각]" if is_late else ""
@@ -906,6 +914,8 @@ def extract_gmail_interactive(
                 f"점수: {score}{late_mark} | {reason}"
             )
 
+        # 같은 학생·과제의 모든 스레드를 확인한 뒤 원본 시각으로 유효본을 선택한다.
+        new_rows = deduplicate_submissions(new_rows, grace_dt)
         newly_replied = 0
         already_replied = sum(1 for r in new_rows if r.get("is_replied"))
 
