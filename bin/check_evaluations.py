@@ -3,14 +3,21 @@ import sys
 import os
 import csv
 import argparse
-from collections import Counter
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from modules.peer_grader import build_track_map
+from modules.peer_grader import (
+    build_track_map,
+    normalize_student_id,
+    calculate_majority_vote,
+    calculate_evaluator_points,
+    load_review_assignments,
+    find_review_assignment_paths,
+)
 from modules.match_assigner import parse_markdown_table
+from modules.sheet_updater import normalize_track
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 SETTINGS_FILE = os.path.join(
@@ -41,9 +48,24 @@ def main():
     parser.add_argument(
         "--upload", action="store_true", help="Upload graded results to Google Sheets"
     )
+    parser.add_argument(
+        "--assignments",
+        action="append",
+        help="해당 주차의 마크다운 배정표 경로 (여러 파일 지정 가능)",
+    )
+    parser.add_argument(
+        "--max-score", type=float, required=True, help="Rubric maximum total score"
+    )
     args = parser.parse_args()
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        assignment_paths = args.assignments or find_review_assignment_paths(
+            base_dir, args.course, args.week
+        )
+        assignments = load_review_assignments(assignment_paths)
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
     # 크레덴셜 후보 경로 순서대로 탐색
     candidates = [
         os.path.join(base_dir, "secret.json"),
@@ -96,8 +118,8 @@ def main():
         values = result.get("values", [])
 
     if not values:
-        print("💡 데이터가 없습니다.")
-        return
+        print("💡 응답이 없습니다. 배정된 평가자의 미완료 점수를 0점으로 기록합니다.")
+        values = [[]]
 
     headers = values[0]
     evaluator_idx, target_idx = -1, -1
@@ -130,18 +152,19 @@ def main():
 
     # 1. Group data
     # evals_by_target = { target_id: [ (evaluator_id, scores_array), ... ] }
-    # assigned_count = { evaluator_id: count } (How many evaluations they actually submitted)
+    # 실제 배정표의 피평가자 건수. 제출하지 않은 평가도 분모에 포함한다.
     evals_by_target = {}
-    assigned_count = {}
-
-    # Track maximum observed score per question globally to deduce "Max Score"
-    max_scores_per_q = [0.0] * len(score_idxs)
+    assigned_count = {e: len(targets) for e, targets in assignments.items()}
 
     week_num = str(int(args.week))  # "06" -> "6", "10" -> "10"
     print(f"🔍 필터링 주차 키워드: '{week_num}' (예: {week_num}주차, Week {week_num})")
 
+    from modules.peer_grader import deduplicate_and_filter_evals
+
+    raw_evals = []
+
     for row in values[1:]:
-        if len(row) <= max(target_idx, week_idx):
+        if len(row) <= max(evaluator_idx, target_idx, week_idx):
             continue
 
         # 주차 필터링
@@ -153,10 +176,8 @@ def main():
         ):
             continue
 
-        evaluator = row[evaluator_idx].strip()
-        target = row[target_idx].strip()
-        if not evaluator or not target:
-            continue
+        evaluator = normalize_student_id(row[evaluator_idx])
+        target = normalize_student_id(row[target_idx])
 
         scores_given = []
         for i, idx in enumerate(score_idxs):
@@ -166,14 +187,18 @@ def main():
                 else 0.0
             )
             scores_given.append(val)
-            if val > max_scores_per_q[i]:
-                max_scores_per_q[i] = val
 
+        raw_evals.append(
+            {"evaluator": evaluator, "target": target, "scores": scores_given}
+        )
+
+    submitted_evaluations = deduplicate_and_filter_evals(raw_evals, assignments)
+
+    for (evaluator, target), scores_given in submitted_evaluations.items():
         evals_by_target.setdefault(target, []).append((evaluator, scores_given))
-        assigned_count[evaluator] = assigned_count.get(evaluator, 0) + 1
 
-    total_max_submission_score = sum(max_scores_per_q)
-    if total_max_submission_score == 0:
+    total_max_submission_score = args.max_score
+    if total_max_submission_score <= 0:
         total_max_submission_score = 1.0  # prevent div zero
 
     # 2. Determine Majority and Evaluation Points
@@ -183,30 +208,11 @@ def main():
     target_submission_score = {}  # Final evaluated score by majority
 
     for target, evals in evals_by_target.items():
-        # count occurrences of each score array
-        score_tuples = [tuple(s) for _, s in evals]
-        counter = Counter(score_tuples)
-        majority_scores, majority_count = counter.most_common(1)[0]
-
-        has_majority = majority_count > (len(evals) // 2)
-
-        # Tie Breaker fallback: if 2 people tied, we just generously use the one with higher sum
-        if not has_majority:
-            # Sort by sum of scores descending
-            majority_scores = sorted(
-                counter.keys(), key=lambda s: sum(s), reverse=True
-            )[0]
-
-        target_submission_score[target] = sum(majority_scores)
-
-        for evaluator, scores in evals:
-            if tuple(scores) == majority_scores:
-                # Earn a piece of the 3 points
-                pct_weight = 3.0 / assigned_count[evaluator]
-                evaluator_points[evaluator] += pct_weight
-            else:
-                # Wrong! Gets 0 for this piece.
-                pass
+        majority_scores, _, submission_score = calculate_majority_vote(evals)
+        target_submission_score[target] = submission_score
+        earned = calculate_evaluator_points(evals, majority_scores, assigned_count)
+        for evaluator, points in earned.items():
+            evaluator_points[evaluator] += points
 
     # 3. Calculate Final Combined Score
     # For every student found in either target or evaluator pool
@@ -214,14 +220,25 @@ def main():
         set(evaluator_points.keys())
     )
 
-    roster_course = "wb" if args.course == "web" else args.course
+    roster_course = "wb" if args.course in {"web", "web1", "web2"} else args.course
     md_path = os.path.join(
         base_dir, "5input", "students", f"{roster_course}-students.md"
     )
     roster_data = []
     if os.path.exists(md_path):
         roster_data = parse_markdown_table(md_path)
-        valid_students = {row.get("학번", "") for row in roster_data if row.get("학번")}
+        requested_track = {"py": "4", "web1": "1", "web2": "2"}.get(args.course)
+        roster_data = [
+            row
+            for row in roster_data
+            if normalize_student_id(row.get("학번"))
+            and (
+                requested_track is None
+                or normalize_track(row.get("강좌번호") or requested_track)
+                == requested_track
+            )
+        ]
+        valid_students = {normalize_student_id(row["학번"]) for row in roster_data}
         all_students = all_students.intersection(valid_students)
         print(
             f"📊 {args.course} 트랙 학생 명부 {len(valid_students)}명 기준 교집합 필터링: {len(all_students)}명 대상"
@@ -285,13 +302,15 @@ def main():
     if getattr(args, "upload", False):
         print("\n⬇️ 이제 추출된 데이터를 시트에 실제 기록(Append)합니다 ⬇️")
         from datetime import datetime
-        from modules.sheet_updater import append_grades_to_sheet
+        from modules.sheet_updater import upsert_grades_to_sheet
 
         roster_by_sid = {}
         if roster_data:
             for row in roster_data:
                 if row.get("학번"):
-                    roster_by_sid[row["학번"]] = row.get("이름", "")
+                    roster_by_sid[normalize_student_id(row["학번"])] = row.get(
+                        "이름", ""
+                    )
 
         rows_to_append = []
         today_str = datetime.today().strftime("%Y-%m-%d")
@@ -320,7 +339,7 @@ def main():
             )
 
         if rows_to_append:
-            success = append_grades_to_sheet(rows_to_append, course=args.course)
+            success = upsert_grades_to_sheet(rows_to_append, course=args.course)
             if success:
                 print(f"✅ {args.course} {args.week}주차 상호평가 시트 업로드 성공!")
             else:

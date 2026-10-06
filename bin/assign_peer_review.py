@@ -125,7 +125,8 @@ def load_submitted(
 
 
 def assign_reviews(
-    submitted_last3: List[str],
+    evaluator_ids: List[str],
+    reviewee_ids: List[str],
     reviews_per_person: int,
     seed: int = 42,
 ) -> Tuple[Dict[str, List[str]], Dict[str, int]]:
@@ -136,19 +137,22 @@ def assign_reviews(
         receive_counts: {student_last3: 피평가 횟수}
     """
     random.seed(seed)
-    n = len(submitted_last3)
+    n = len(reviewee_ids)
     if n < reviews_per_person + 1:
         print(f"❌ 제출자가 {n}명으로 1인당 {reviews_per_person}명 배정이 불가합니다.")
         sys.exit(1)
 
-    shuffled = list(submitted_last3)
-    random.shuffle(shuffled)
+    evaluators_shuffled = list(evaluator_ids)
+    random.shuffle(evaluators_shuffled)
+
+    reviewees_shuffled = list(reviewee_ids)
+    random.shuffle(reviewees_shuffled)
 
     assignments: Dict[str, List[str]] = {}
-    receive_counts = {s: 0 for s in submitted_last3}
+    receive_counts = {s: 0 for s in reviewee_ids}
 
-    for evaluator in shuffled:
-        candidates = [s for s in shuffled if s != evaluator]
+    for evaluator in evaluators_shuffled:
+        candidates = [s for s in reviewees_shuffled if s != evaluator]
         random.shuffle(candidates)
         candidates.sort(key=lambda x: receive_counts[x])
         chosen = candidates[:reviews_per_person]
@@ -245,7 +249,12 @@ def generate_markdown(
             for i in range(reviews_per_person)
         ]
     )
-    lines.append(f"| No | Evaluator ID | Status | {reviewee_hdrs} |")
+
+    hdr1 = "No"
+    hdr2 = "Evaluator ID" if is_en else "평가자"
+    hdr3 = "Status" if is_en else "상태"
+    lines.append(f"| {hdr1} | {hdr2} | {hdr3} | {reviewee_hdrs} |")
+
     sep = " | ".join([":---"] * reviews_per_person)
     lines.append(f"| :---: | :---: | :---: | {sep} |")
 
@@ -257,7 +266,10 @@ def generate_markdown(
             url = submitted.get(r3, "")
             cells.append(f"[{r3}]({url})" if url else r3)
         cells_str = " | ".join(cells)
-        status = "Submitted" if last3 in submitted else "Not Submitted"
+        if is_en:
+            status = "Submitted" if last3 in submitted else "Not Submitted"
+        else:
+            status = "제출" if last3 in submitted else "미제출"
         lines.append(f"| {no} | **{last3}** | {status} | {cells_str} |")
         no += 1
 
@@ -269,12 +281,17 @@ def generate_markdown(
         if is_en
         else "## 2. 피평가자별 수신 횟수\n"
     )
-    lines.append("| No | Student ID (Last 3 Digits) | Received Reviews Count |")
+
+    hdr1 = "No"
+    hdr2 = "Student ID (Last 3 Digits)" if is_en else "학번(끝 3자리)"
+    hdr3 = "Received Reviews Count" if is_en else "피평가 횟수"
+    lines.append(f"| {hdr1} | {hdr2} | {hdr3} |")
     lines.append("| :---: | :---: | :---: |")
     no = 1
     for last3 in sorted(receive_counts.keys()):
         cnt = receive_counts[last3]
-        lines.append(f"| {no} | **{last3}** | {cnt} reviews |")
+        cnt_text = f"{cnt} reviews" if is_en else f"{cnt}회"
+        lines.append(f"| {no} | **{last3}** | {cnt_text} |")
         no += 1
 
     lines.append("")
@@ -285,7 +302,10 @@ def generate_markdown(
         if is_en
         else "## 3. 미제출자 (채점 기회 박탈)\n"
     )
-    lines.append("| No | Student ID (Last 3 Digits) | Status |")
+    hdr1 = "No"
+    hdr2 = "Student ID (Last 3 Digits)" if is_en else "학번(끝 3자리)"
+    hdr3 = "Status" if is_en else "상태"
+    lines.append(f"| {hdr1} | {hdr2} | {hdr3} |")
     lines.append("| :---: | :---: | :--- |")
     no = 1
     for last3 in non_submitted:
@@ -326,7 +346,10 @@ def upload_peer_eval(
         f"Reviewee {i+1}" if is_en else f"피평가자 {i+1}"
         for i in range(reviews_per_person)
     ]
-    sheet_rows: List[List[Any]] = [["No", "Evaluator ID", "Status"] + reviewee_hdrs]
+
+    eval_hdr = "Evaluator ID" if is_en else "평가자"
+    status_hdr = "Status" if is_en else "상태"
+    sheet_rows: List[List[Any]] = [["No", eval_hdr, status_hdr] + reviewee_hdrs]
 
     # 제출자 배정
     no = 1
@@ -339,13 +362,15 @@ def upload_peer_eval(
                 r_cells.append(f'=HYPERLINK("{url}", "{r3}")')
             else:
                 r_cells.append(r3)
-        sheet_rows.append([no, f"'{last3}", "Submitted"] + r_cells)
+        status_txt = "Submitted" if is_en else "제출"
+        sheet_rows.append([no, f"'{last3}", status_txt] + r_cells)
         no += 1
 
     # 미제출자
     sheet_rows.append([])
     status_label = "Excluded" if is_en else "제외"
-    sheet_rows.append(["", "Non-Submitters", status_label] + [""] * reviews_per_person)
+    non_sub_txt = "Non-Submitters" if is_en else "미제출자"
+    sheet_rows.append(["", non_sub_txt, status_label] + [""] * reviews_per_person)
     no_ns = 1
     for last3 in non_submitted:
         status_txt = "Not Submitted — Excluded" if is_en else "미제출 — 제외"
@@ -477,7 +502,8 @@ def main() -> None:
         evaluator_ids = sorted(roster_map.keys())
 
     assignments, receive_counts = assign_reviews(
-        submitted_last3 if exclude else evaluator_ids,
+        evaluator_ids,
+        submitted_last3,
         args.reviews,
         seed=args.seed,
     )
