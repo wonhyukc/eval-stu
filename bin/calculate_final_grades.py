@@ -22,7 +22,7 @@ def get_sheet_service(base_dir):
         os.path.expanduser("~/nvme_data/prj/exchange/service-account.json"),
     ]
     secret_path = next((p for p in candidates if os.path.exists(p)), None)
-    if os.path.exists(secret_path):
+    if secret_path and os.path.exists(secret_path):
         creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)
     else:
         creds, _ = google.auth.default(scopes=SCOPES)
@@ -144,8 +144,13 @@ def main():
         print(f"✅ {track} 분반(기말고사 데이터) {len(rows)}건 처리 완료")
 
     # 2. 추가 데이터 탭 수집
-    extra_tabs = ["중간고사", "과제_이메일", "과제_상호평가", "수업태도"]
-    for tab in extra_tabs:
+    extra_tab_fields = {
+        "중간고사": "중간",
+        "과제_이메일": "과제_이메일",
+        "과제_상호평가": "과제_상호평가",
+        "수업태도": "수업태도",
+    }
+    for tab, field in extra_tab_fields.items():
         header, rows = read_sheet_data(service, SPREADSHEET_ID, tab)
         if not rows:
             continue
@@ -162,7 +167,7 @@ def main():
             sid = str(row[id_idx]).strip()
             if sid in students:
                 score = extract_score(row, header)
-                students[sid][tab] = score
+                students[sid][field] = score
                 matched_count += 1
         print(f"✅ {tab} 데이터 병합 완료: {matched_count}명 매칭됨")
 

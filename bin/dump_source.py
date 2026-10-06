@@ -8,7 +8,8 @@ from update_ids import get_sheet_title, SPREADSHEET_ID, SOURCE_GID
 
 
 def main():
-    service = get_sheet_service()
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    service = get_sheet_service(base_dir)
     source_title = get_sheet_title(service, SOURCE_GID)
     source_res = (
         service.spreadsheets()

@@ -153,7 +153,7 @@ def main():
             )
 
         # Clear
-        clear_range = f"'{tab_name}'!A2:I100"
+        clear_range = f"'{tab_name}'!A2:I"
         service.spreadsheets().values().clear(
             spreadsheetId=sheet_id, range=clear_range
         ).execute()

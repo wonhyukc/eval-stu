@@ -93,8 +93,7 @@ def get_max_no(service, spreadsheet_id, sheet_title):
                     max_no = max(max_no, int(clean_no))
         return max_no
     except Exception as e:
-        print(f"⚠️ 일련번호(no) 조회 실패. 기본값 0 사용: {e}")
-        return 0
+        raise RuntimeError("일련번호(No)를 조회하지 못해 저장을 중단합니다.") from e
 
 
 def normalize_row_to_11cols(row):
@@ -192,14 +191,14 @@ def normalize_row_to_13cols(row, row_num: int = 2, course: str = "web1"):
 
 def make_scaled_score_formula(row_num: int) -> str:
     """주어진 행 번호에 대한 E열(Scaled Score) 수식을 생성합니다.
-    H열이 'lab'이면 주차별 실습 만점(3주차 9점, 그 외 10점) 대비 3.0점 스케일 환산,
+    H열이 'lab'이거나 'L1' 등 패턴이면 주차별 실습 만점(3주차 9점, 4주차 10점, 그 외 10점) 대비 3.0점 스케일 환산,
     그 외는 F열(원점수) 그대로 반영.
     """
-    return (
-        f'=IF(H{row_num}="lab", '
-        f"IF(B{row_num}=3, ROUND((F{row_num}/9)*3, 2), ROUND((F{row_num}/10)*3, 2)), "
-        f"F{row_num})"
+    lab_check = (
+        f'OR(LOWER(H{row_num})="lab", ' f'REGEXMATCH(UPPER(H{row_num}), "^L[0-9]"))'
     )
+    week_max = f"IFS(B{row_num}=3, 9, B{row_num}=4, 10, TRUE, 10)"
+    return f"=IF({lab_check}, " f"ROUND((F{row_num}/{week_max})*3, 2), " f"F{row_num})"
 
 
 def make_name_vlookup_formula(row_num: int, course: str = "web1") -> str:
@@ -889,8 +888,8 @@ def append_grades_to_sheet(rows_data, course="py"):
         return False
 
     # 기존 데이터에서 최대 no 및 기존 행 수 조회
-    max_no = get_max_no(service, spreadsheet_id, sheet_title)
     try:
+        max_no = get_max_no(service, spreadsheet_id, sheet_title)
         res = (
             service.spreadsheets()
             .values()
@@ -898,8 +897,9 @@ def append_grades_to_sheet(rows_data, course="py"):
             .execute()
         )
         existing_row_count = len(res.get("values", []))
-    except Exception:
-        existing_row_count = max_no + 1
+    except Exception as e:
+        print(f"❌ 기존 행·일련번호 조회 실패. 저장 중단: {e}")
+        return False
 
     formatted_rows = []
     for i, r in enumerate(rows_data):
@@ -1007,9 +1007,9 @@ def append_grades_to_sheet(rows_data, course="py"):
 
 
 def upsert_grades_to_sheet(rows_data, course="py"):
-    """(StudentID, Type1, Type2) 복합 키를 기준으로 멱등성(Idempotency)을 보장하는 Upsert 함수.
+    """(StudentID, wk, Type1, Type2) 복합 키를 기준으로 주차별 Upsert를 수행한다.
 
-    - 기존 행에 동일한 (학번, 대분류, 세부유형)이 존재하면 해당 행을 갱신(Update).
+    - 기존 행에 동일한 (학번, 주차, 대분류, 세부유형)이 존재하면 해당 행을 갱신(Update).
     - 존재하지 않으면 최하단에 신규 추가(Append).
     - 스크립트를 N번 실행해도 중복 데이터가 누적되지 않음.
     - E열(환산점수 수식) 및 K열(Name VLOOKUP 수식)을 절대 덮어쓰지 않고 보존함.
@@ -1071,8 +1071,15 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         )
         existing_rows = res.get("values", [])
     except Exception as e:
-        print(f"⚠️ 기존 데이터 조회 실패: {e}")
-        existing_rows = []
+        print(f"❌ 기존 데이터 조회 실패. 저장 중단: {e}")
+        return False
+
+    # 수식 보정 등 어떠한 쓰기도 하기 전에 일련번호 조회까지 성공해야 한다.
+    try:
+        max_no = get_max_no(service, spreadsheet_id, sheet_title)
+    except Exception as e:
+        print(f"❌ 일련번호 조회 실패. 저장 중단: {e}")
+        return False
 
     # 기존 행 중 E열(Scaled Score) 또는 K열(Name VLOOKUP) 수식이 누락된 행 일괄 보정
     missing_formula_updates = []
@@ -1107,11 +1114,18 @@ def upsert_grades_to_sheet(rows_data, course="py"):
         except Exception as e:
             print(f"⚠️ 수식 자동 보정 실패: {e}")
 
-    # 기존 데이터 인덱싱: (student_id_last3, type1, type2) -> row_number (idx + 2)
+    # 기존 데이터 인덱싱: (student_id_last3, week, type1, type2) -> row_number (idx + 2)
     def _normalize_sid(raw: str) -> str:
         """학번 문자열을 끝 3자리로 정규화 (키 비교 전용)."""
         clean = str(raw).replace("'", "").strip()
         return clean[-3:] if len(clean) >= 3 else clean
+
+    def _normalize_week(raw) -> str:
+        """숫자·문자열 주차를 같은 키로 비교한다 (3, '03, 3.0 등)."""
+        clean = str(raw).replace("'", "").strip() if raw is not None else ""
+        if re.fullmatch(r"\d+(?:\.0+)?", clean):
+            return str(int(clean.split(".")[0]))
+        return clean
 
     key_to_row_num = {}
     for idx, row in enumerate(existing_rows):
@@ -1120,22 +1134,56 @@ def upsert_grades_to_sheet(rows_data, course="py"):
             sid = _normalize_sid(row[2])
             t1 = str(row[6]).strip()
             t2 = str(row[7]).replace("과제", "").replace("'", "").strip()
-            key_to_row_num[(sid, t1, t2)] = idx + 2
+            week = _normalize_week(row[1])
+            key_to_row_num[(sid, week, t1, t2)] = idx + 2
         elif len(row) > 6:  # 구 11열 기준 호환: ID=2, Type1=5, Type2=6
             sid = _normalize_sid(row[2])
             t1 = str(row[5]).strip()
             t2 = str(row[6]).replace("과제", "").replace("'", "").strip()
-            key_to_row_num[(sid, t1, t2)] = idx + 2
+            week = _normalize_week(row[1])
+            key_to_row_num[(sid, week, t1, t2)] = idx + 2
         elif len(row) > 4:  # 구 9열 기준 호환: ID=1, Type=4
             sid = _normalize_sid(row[1])
             t1 = "hw"
             t2 = str(row[4]).replace("과제", "").replace("'", "").strip()
-            key_to_row_num[(sid, t1, t2)] = idx + 2
+            # 구 9열에는 주차가 없으므로 이메일 과제 번호(0.x)에서 추출한다.
+            week_match = re.search(r"0\.(\d+)", t2)
+            week = _normalize_week(week_match.group(1) if week_match else "")
+            key_to_row_num[(sid, week, t1, t2)] = idx + 2
 
     rows_to_update = []  # (row_number, formatted_row)
     rows_to_append = []
 
-    max_no = get_max_no(service, spreadsheet_id, sheet_title)
+    # 같은 배치 내 중복 키 방지 (가장 최신 데이터만 유지)
+    last_idx_per_key = {}
+    for i, r_in in enumerate(rows_data):
+        tmp_row = normalize_row_to_13cols(r_in, course=course)
+        tmp_id = (
+            str(tmp_row[2]).lstrip("'").strip()
+            if len(tmp_row) > 2 and tmp_row[2]
+            else ""
+        )
+        tmp_sid = _normalize_sid(tmp_id)
+
+        tmp_wk = tmp_row[1] if len(tmp_row) > 1 else ""
+        if tmp_wk:
+            try:
+                tmp_wk = int(str(tmp_wk).strip().replace("'", ""))
+            except ValueError:
+                pass
+        tmp_week = _normalize_week(tmp_wk)
+
+        tmp_t1 = str(tmp_row[6]).strip() if len(tmp_row) > 6 and tmp_row[6] else "hw"
+        tmp_t2 = (
+            str(tmp_row[7]).replace("과제", "").replace("'", "").strip()
+            if len(tmp_row) > 7 and tmp_row[7]
+            else ""
+        )
+
+        last_idx_per_key[(tmp_sid, tmp_week, tmp_t1, tmp_t2)] = i
+
+    valid_indices = set(last_idx_per_key.values())
+    rows_data = [r for i, r in enumerate(rows_data) if i in valid_indices]
 
     for r_in in rows_data:
         row = normalize_row_to_13cols(r_in, course=course)
@@ -1202,7 +1250,7 @@ def upsert_grades_to_sheet(rows_data, course="py"):
             clean_subject = str(row[11]).lstrip("'")
             row[11] = f"'{clean_subject}"
 
-        key = (sid_key, t1, clean_type2)
+        key = (sid_key, _normalize_week(row[1]), t1, clean_type2)
 
         while len(row) < 13:
             row.append("")
@@ -1248,8 +1296,6 @@ def upsert_grades_to_sheet(rows_data, course="py"):
             row[10] = make_name_vlookup_formula(new_append_row_num, course=course)
             row[12] = ""
             rows_to_append.append(row[:13])
-            # 같은 배치 내 중복 방지
-            key_to_row_num[key] = -1
 
     success = True
 
@@ -1286,7 +1332,7 @@ def upsert_grades_to_sheet(rows_data, course="py"):
             success = False
 
     # 3. 신규 행이 추가된 경우 자동 re-sort (정렬 일관성 보장)
-    if rows_to_append and success:
+    if (rows_to_append or rows_to_update) and success:
         print("🔄 신규 행 추가에 따른 자동 정렬 실행 중...")
         try:
             sort_sheet_remote(course=course)
