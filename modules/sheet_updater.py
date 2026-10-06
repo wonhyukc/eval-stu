@@ -130,8 +130,9 @@ def normalize_row_to_13cols(row, row_num: int = 2, course: str = "web1"):
             r[10] = name_formula
         return r[:13]
 
-    # 2. 기존 11열 구조인 경우: [No, wk, ID, Track, Score, Type1, Type2, Reason, Date, Name, Subject]
-    if len(r) == 11 and str(r[5]).strip().lower() in [
+    # 2. 기존 11열 구조인 경우 (끝의 빈 셀이 생략된 행 포함)
+    # [No, wk, ID, Track, Score, Type1, Type2, Reason, Date, Name, Subject]
+    if 6 <= len(r) <= 11 and str(r[5]).strip().lower() in [
         "hw",
         "class",
         "mid",
@@ -139,6 +140,7 @@ def normalize_row_to_13cols(row, row_num: int = 2, course: str = "web1"):
         "peer",
         "lab",
     ]:
+        r.extend([""] * (11 - len(r)))
         no, wk, sid, track, score, t1, t2, reason, dt, _, subj = r
         return [
             no,
@@ -704,7 +706,26 @@ def translate_reason_to_ko(reason: str) -> str:
     return raw
 
 
-def sort_sheet_rows(rows_data, renumber_desc=False):
+def _translate_formula_rows(formula: str, row_offset: int) -> str:
+    """행 이동에 맞춰 상대 행 참조만 옮기고 절대 참조·문자열·시트명은 보존합니다."""
+    tokens = re.compile(
+        r'"(?:[^"]|"")*"|\'(?:[^\']|\'\')*\'|'
+        r"(?<![\w.])(\$?[A-Za-z]{1,3})(\$?)([1-9]\d*)(?![\w(!])"
+    )
+
+    def translate(match: re.Match[str]) -> str:
+        column, absolute_row, row = match.groups()
+        if column is None or absolute_row:
+            return match.group(0)
+        new_row = int(row) + row_offset
+        if new_row < 1:
+            raise ValueError("수식의 상대 행 참조를 1행 이전으로 이동할 수 없습니다.")
+        return f"{column}{new_row}"
+
+    return tokens.sub(translate, formula)
+
+
+def sort_sheet_rows(rows_data, renumber_desc=False, course="web1"):
     """13열 성적 데이터를 4단계 표준 정렬 순서로 정렬합니다:
 
     1차: week 역순 (descending)
@@ -713,8 +734,12 @@ def sort_sheet_rows(rows_data, renumber_desc=False):
     4차: ID 오름차순 (ascending)
 
     ⚠️ No(A열)는 고유 식별 번호이므로 기본적으로 정렬 시 재부여하지 않고 원본 값을 보존합니다.
+    결과를 헤더 다음 2행부터 기록할 수 있도록 E열/K열 수식의 상대 행 참조를 이동합니다.
     """
-    normalized = [normalize_row_to_13cols(r) for r in rows_data]
+    normalized = [
+        (row_num, normalize_row_to_13cols(r, row_num=row_num, course=course))
+        for row_num, r in enumerate(rows_data, start=2)
+    ]
 
     def _sort_key(row):
         # 1) week 역순
@@ -743,7 +768,14 @@ def sort_sheet_rows(rows_data, renumber_desc=False):
 
         return (wk_val, t1_str, t2_str, id_val)
 
-    sorted_list = sorted(normalized, key=_sort_key)
+    sorted_list = []
+    for row_num, (original_row_num, row) in enumerate(
+        sorted(normalized, key=lambda item: _sort_key(item[1])), start=2
+    ):
+        offset = row_num - original_row_num
+        row[4] = _translate_formula_rows(str(row[4]), offset)
+        row[10] = _translate_formula_rows(str(row[10]), offset)
+        sorted_list.append(row)
 
     if renumber_desc:
         total = len(sorted_list)

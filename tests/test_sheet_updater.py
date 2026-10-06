@@ -1,6 +1,8 @@
 import os
 import sys
 
+import pytest
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.sheet_updater import normalize_row_to_11cols, route_web_rows
@@ -135,6 +137,94 @@ def test_sort_sheet_rows_4level():
     assert sorted_res[1][0] == "3"
     assert sorted_res[2][0] == "2"
     assert sorted_res[3][0] == "1"
+
+
+@pytest.mark.parametrize("course", ["py", "web1", "web2"])
+@pytest.mark.parametrize("input_width", [11, 13])
+@pytest.mark.parametrize("renumber_desc", [False, True])
+def test_sort_sheet_rows_formulas_follow_sorted_students(
+    course, input_width, renumber_desc
+):
+    from copy import deepcopy
+    from modules.sheet_updater import (
+        make_name_vlookup_formula,
+        make_scaled_score_formula,
+        normalize_row_to_13cols,
+        sort_sheet_rows,
+    )
+
+    rows = [
+        [71, 2, "123", "1", 1.0, "hw", "0.2", "", "", "", "older"],
+        [21, 3, "456", "1", 0.5, "hw", "0.3", "", "", "", "newer"],
+    ]
+    if input_width == 13:
+        rows = [
+            normalize_row_to_13cols(row, row_num=index, course=course)
+            for index, row in enumerate(rows, start=2)
+        ]
+        rows[0][12] = "older appeal"
+        rows[1][12] = "newer appeal"
+    original = deepcopy(rows)
+
+    result = sort_sheet_rows(rows, renumber_desc=renumber_desc, course=course)
+
+    assert [row[2] for row in result] == ["456", "123"]
+    assert [row[5] for row in result] == [0.5, 1.0]
+    assert [row[11] for row in result] == ["newer", "older"]
+    assert [row[0] for row in result] == (["2", "1"] if renumber_desc else [21, 71])
+    assert [row[12] for row in result] == (
+        ["newer appeal", "older appeal"] if input_width == 13 else ["", ""]
+    )
+    for row_num, row in enumerate(result, start=2):
+        assert row[4] == make_scaled_score_formula(row_num)
+        assert row[10] == make_name_vlookup_formula(row_num, course)
+    assert rows == original
+
+
+@pytest.mark.parametrize(
+    "formula,offset,expected",
+    [
+        ("=ROUND(F2/$Z$1, 2)", 3, "=ROUND(F5/$Z$1, 2)"),
+        ("=SUM($F3:F4)", -1, "=SUM($F2:F3)"),
+        (
+            '=IF(C2="F2", "C2 ""F2""", LOG10(F2))',
+            1,
+            '=IF(C3="F2", "C2 ""F2""", LOG10(F3))',
+        ),
+        ("='Q2'!F2+ABC2!$F$2", 1, "='Q2'!F3+ABC2!$F$2"),
+    ],
+)
+def test_translate_formula_rows_preserves_fixed_references_and_literals(
+    formula, offset, expected
+):
+    from modules.sheet_updater import _translate_formula_rows
+
+    assert _translate_formula_rows(formula, offset) == expected
+
+
+def test_sort_sheet_rows_preserves_custom_formulas():
+    from modules.sheet_updater import normalize_row_to_13cols, sort_sheet_rows
+
+    older = normalize_row_to_13cols(
+        [71, 2, "123", "1", 1.0, "hw", "0.2", "", "", "", ""], row_num=2
+    )
+    newer = normalize_row_to_13cols(
+        [21, 3, "456", "1", 0.5, "hw", "0.3", "", "", "", ""], row_num=3
+    )
+    older[4] = "=ROUND(F2/$Z$1, 2)"
+    newer[4] = "=ROUND(F3/$Z$1, 2)"
+    older[10] = '=IFERROR(VLOOKUP(C2, progress!$A$5:$C, 3, FALSE), "C2")'
+    newer[10] = '=IFERROR(VLOOKUP(C3, progress!$A$5:$C, 3, FALSE), "C3")'
+
+    result = sort_sheet_rows([older, newer])
+
+    assert [row[2] for row in result] == ["456", "123"]
+    assert result[0][4] == "=ROUND(F2/$Z$1, 2)"
+    assert result[1][4] == "=ROUND(F3/$Z$1, 2)"
+    assert result[0][10] == '=IFERROR(VLOOKUP(C2, progress!$A$5:$C, 3, FALSE), "C3")'
+    assert result[1][10] == '=IFERROR(VLOOKUP(C3, progress!$A$5:$C, 3, FALSE), "C2")'
+    assert older[4] == "=ROUND(F2/$Z$1, 2)"
+    assert newer[4] == "=ROUND(F3/$Z$1, 2)"
 
 
 def test_translate_reason_to_en():
@@ -383,6 +473,75 @@ def test_normalize_row_to_13cols():
     )  # Name (K열)
     assert row_13[11] == "과제제출"  # Subject (L열)
     assert row_13[12] == ""  # Appeal (M열)
+
+
+@pytest.mark.parametrize("input_width", [6, 7, 8, 9, 10, 11])
+@pytest.mark.parametrize("score,type2", [(0.5, "0.2"), (0, "0.2"), (9, "lab")])
+def test_normalize_row_to_13cols_preserves_short_legacy_rows(input_width, score, type2):
+    from modules.sheet_updater import (
+        make_name_vlookup_formula,
+        make_scaled_score_formula,
+        normalize_row_to_13cols,
+    )
+
+    full_row = [71, 2, "123", "1", score, "hw", type2, "", "", "", ""]
+    short_row = full_row[:input_width]
+
+    result = normalize_row_to_13cols(short_row, row_num=7, course="py")
+
+    assert result == [
+        71,
+        2,
+        "123",
+        "1",
+        make_scaled_score_formula(7),
+        score,
+        "hw",
+        type2 if input_width > 6 else "",
+        "",
+        "",
+        make_name_vlookup_formula(7, "py"),
+        "",
+        "",
+    ]
+    assert short_row == full_row[:input_width]
+
+
+@pytest.mark.parametrize(
+    "function_name", ["append_grades_to_sheet", "upsert_grades_to_sheet"]
+)
+def test_upload_short_legacy_row_preserves_score_and_types(function_name):
+    from unittest.mock import MagicMock, patch
+    from modules import sheet_updater
+
+    service = MagicMock()
+    service.spreadsheets().values().get().execute.return_value = {"values": []}
+    row = [0, 2, "123", "1", 0.5, "hw", "0.2", "Pass", "10/01 10:00"]
+
+    with patch.object(
+        sheet_updater,
+        "load_course_config",
+        return_value={"sheet_id": "fake", "target_gid": 1},
+    ), patch.object(
+        sheet_updater, "get_sheet_service", return_value=service
+    ), patch.object(
+        sheet_updater, "get_target_sheet_title", return_value="score"
+    ), patch.object(
+        sheet_updater, "get_max_no", return_value=0
+    ), patch.object(
+        sheet_updater, "apply_score_sheet_formatting"
+    ), patch.object(
+        sheet_updater, "sort_sheet_remote", return_value=True
+    ):
+        assert getattr(sheet_updater, function_name)([row], course="web1")
+
+    written = (
+        service.spreadsheets().values().append.call_args.kwargs["body"]["values"][0]
+    )
+    assert written[2] == "'123"
+    assert written[5:8] == [0.5, "hw", "'0.2"]
+    assert written[8:10] == ["Pass", "10/01 10:00"]
+    assert row == [0, 2, "123", "1", 0.5, "hw", "0.2", "Pass", "10/01 10:00"]
 
 
 def test_is_lab_assignment():
