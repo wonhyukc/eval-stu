@@ -172,6 +172,7 @@ def interactive_grader(monkeypatch):
     case.upload = MagicMock()
     monkeypatch.setattr(engine, "_upload_rows_to_sheet", case.upload)
     case.engine, case.writer, case.context, case.row = engine, writer, context, row
+    case.page = page
     return case
 
 
@@ -464,25 +465,33 @@ def test_original_submission_requires_own_timestamp(bad_date):
 
 
 @pytest.mark.parametrize(
-    "student_date,restore_fails,body_available",
+    "student_date,restore_error,body_available",
     [
-        ("Thu, 1 Oct 2026 23:50:00 +0900", False, True),
-        ("", False, True),
-        ("Thu, 1 Oct 2026 23:50:00 +0900", True, True),
-        ("Thu, 1 Oct 2026 23:50:00 +0900", False, False),
+        ("Thu, 1 Oct 2026 23:50:00 +0900", None, True),
+        ("", None, True),
+        ("Thu, 1 Oct 2026 23:50:00 +0900", "navigation", True),
+        ("Thu, 1 Oct 2026 23:50:00 +0900", "rows", True),
+        ("Thu, 1 Oct 2026 23:50:00 +0900", None, False),
     ],
 )
 def test_read_original_submission_restores_search_page(
-    student_date, restore_fails, body_available
+    student_date, restore_error, body_available
 ):
     from unittest.mock import MagicMock
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
     from bin.extract_emails import read_original_submission
     from modules.email_submission import OriginalSubmissionError
 
     page = MagicMock()
     page.url = "https://mail.google.com/mail/u/0/#search/fake"
-    if restore_fails:
+    if restore_error == "navigation":
         page.goto.side_effect = RuntimeError("검색 목록 복귀 실패")
+    if restore_error == "rows":
+        page.wait_for_selector.side_effect = [
+            None,
+            PlaywrightTimeoutError("가시 행 없음"),
+            PlaywrightTimeoutError("새로고침 후에도 가시 행 없음"),
+        ]
     row = MagicMock()
     elements = []
     bodies = []
@@ -518,19 +527,83 @@ def test_read_original_submission_restores_search_page(
         messages if selector == "div.adn.ads" else expand
     )
 
-    if student_date and not restore_fails and body_available:
+    if student_date and not restore_error and body_available:
         result = read_original_submission(page, row)
         assert result["date_str"] == student_date
         assert result["is_replied"] is True
         assert result["body_html"] == "https://example.test/student"
     else:
-        with pytest.raises(OriginalSubmissionError):
+        expected = "검색 목록" if restore_error else None
+        with pytest.raises(OriginalSubmissionError, match=expected):
             read_original_submission(page, row)
 
     row.click.assert_called_once()
     expand.first.click.assert_called_once()
-    page.goto.assert_called_once_with(page.url, wait_until="domcontentloaded")
-    if not restore_fails:
-        page.wait_for_selector.assert_any_call("tr.zA", timeout=10000)
+    page.goto.assert_called_once_with(
+        page.url, wait_until="domcontentloaded", timeout=30000
+    )
+    if restore_error != "navigation":
+        page.wait_for_selector.assert_any_call("tr.zA:visible", timeout=10000)
+    if restore_error == "rows":
+        page.reload.assert_called_once()
     bodies[0].first.wait_for.assert_called_once()
     bodies[1].first.inner_html.assert_not_called()
+
+
+@pytest.mark.parametrize("timeouts", [0, 1, 2])
+def test_restore_search_results_reloads_only_after_timeout(timeouts):
+    from unittest.mock import MagicMock
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+    from bin.extract_emails import restore_search_results
+
+    page = MagicMock()
+    search_url = "https://mail.google.com/mail/u/0/#search/fake"
+    page.wait_for_selector.side_effect = [
+        PlaywrightTimeoutError("가시 행 없음") for _ in range(timeouts)
+    ] + [None]
+
+    if timeouts == 2:
+        with pytest.raises(PlaywrightTimeoutError):
+            restore_search_results(page, search_url)
+    else:
+        restore_search_results(page, search_url)
+
+    page.goto.assert_called_once_with(
+        search_url, wait_until="domcontentloaded", timeout=30000
+    )
+    assert page.wait_for_selector.call_count == (1 if timeouts == 0 else 2)
+    for call in page.wait_for_selector.call_args_list:
+        assert call.args == ("tr.zA:visible",)
+        assert call.kwargs == {"timeout": 10000}
+    if timeouts:
+        page.reload.assert_called_once_with(
+            wait_until="domcontentloaded", timeout=30000
+        )
+    else:
+        page.reload.assert_not_called()
+
+
+def test_interactive_grading_ignores_hidden_search_rows(interactive_grader):
+    from unittest.mock import MagicMock
+
+    case = interactive_grader
+    visible_rows = case.page.locator.return_value
+    hidden_rows = MagicMock()
+    hidden_rows.count.return_value = 100
+    case.page.locator.side_effect = lambda selector: (
+        visible_rows if selector == "tr.zA:visible" else hidden_rows
+    )
+    case.messages = [
+        {
+            "sender_email": "student@example.test",
+            "sender_name": "Student",
+            "date_str": "Thu, 1 Oct 2026 23:50:00 +0900",
+            "body_html": "https://example.test/submission",
+        }
+    ]
+
+    case.engine.extract_gmail_interactive(target_week="5", skip_sheet=True)
+
+    assert len(case.writer.writerows.call_args.args[0]) == 1
+    hidden_rows.count.assert_not_called()
+    hidden_rows.nth.assert_not_called()

@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 from urllib.parse import unquote
 import time
 import email.utils
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 # 프로젝트 루트 경로를 sys.path에 추가
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -482,6 +482,16 @@ def sync_csv_to_sheet(csv_path):
     print("\n✅ 시트 동기화 완료")
 
 
+def restore_search_results(page, search_url):
+    """검색 화면의 가시 행을 기다리고, 화면 전환이 멈추면 한 번 새로고침한다."""
+    page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+    try:
+        page.wait_for_selector("tr.zA:visible", timeout=10000)
+    except PlaywrightTimeoutError:
+        page.reload(wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_selector("tr.zA:visible", timeout=10000)
+
+
 def read_original_submission(page, row, grace_deadline=None, start_time=None):
     """스레드를 열어 개별 메시지 헤더를 읽고 원래 검색 목록으로 돌아온다."""
     search_url = page.url
@@ -543,8 +553,7 @@ def read_original_submission(page, row, grace_deadline=None, start_time=None):
         ) from exc
     finally:
         try:
-            page.goto(search_url, wait_until="domcontentloaded")
-            page.wait_for_selector("tr.zA", timeout=10000)
+            restore_search_results(page, search_url)
         except Exception as exc:
             raise OriginalSubmissionError("검색 목록으로 돌아오지 못했습니다.") from exc
 
@@ -657,7 +666,7 @@ def extract_gmail_interactive(
         print("검색 결과 대기 중...")
         page.wait_for_timeout(5000)
 
-        rows = page.locator("tr.zA")
+        rows = page.locator("tr.zA:visible")
         count = rows.count()
         print(f"총 {count}개의 검색된 이메일을 발견했습니다.")
 
