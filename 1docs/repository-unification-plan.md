@@ -136,12 +136,12 @@ stu2603/                         # 하나의 .git, 비공개
 
 **대상:** 양쪽 Git 상태, `eval-stu/output/`, `9output/`, 기존 배정 및 제출 관련 시트, 학생 공개 대상 목록.
 
-- [ ] 양쪽의 `git status --short`, 브랜치, HEAD, remote, 적용 중인 훅 경로를 기록한다.
-- [ ] 파일별 미커밋 차이를 저장한다. 운영 문서 변경과 기존 `bin/auto_grade_email.py` 변경을 이전 커밋에 임의로 함께 넣지 않는다.
-- [ ] 실행일이 포함된 이전 전 태그와 Git bundle을 Git 미추적 위치에 만든다. Git bundle에는 미커밋 변경과 미추적 산출물이 포함되지 않으므로 각각 별도로 보존한다.
-- [ ] `9output/week6_peer_review_assignments_15143.md`, `9output/week6_peer_review_assignments_15144.md` 및 다른 기존 배정 파일의 존재·크기·해시를 기록한다.
+- [x] 양쪽의 `git status --short`, 브랜치, HEAD, remote, 적용 중인 훅 경로를 기록한다.
+- [x] 파일별 미커밋 차이를 저장한다. 운영 문서 변경과 기존 `bin/auto_grade_email.py` 변경을 이전 커밋에 임의로 함께 넣지 않는다.
+- [x] 실행일이 포함된 이전 전 태그와 Git bundle을 Git 미추적 위치에 만든다. Git bundle에는 미커밋 변경과 미추적 산출물이 포함되지 않으므로 각각 별도로 보존한다.
+- [x] `9output/week6_peer_review_assignments_15143.md`, `9output/week6_peer_review_assignments_15144.md` 및 다른 기존 배정 파일의 존재·크기·해시를 기록한다.
 - [ ] 기존 배정과 제출 관련 시트는 읽기 전용으로 스냅샷을 저장한다. 학생 정보가 포함되므로 Git에 추가하지 않는다.
-- [ ] 기존 환경의 분반별 건수와 하네스 결과를 기록해 기존 문제와 이전으로 생긴 문제를 구분한다.
+- [x] 기존 환경의 분반별 건수와 하네스 결과를 기록해 기존 문제와 이전으로 생긴 문제를 구분한다.
 
 **완료 기준:** 커밋 이력, 미커밋 변경, 미추적 산출물을 각각 복원할 수 있다.
 
@@ -149,17 +149,17 @@ stu2603/                         # 하나의 .git, 비공개
 
 **대상:** `stu2603` 통합 브랜치와 `eval/`.
 
-- [ ] 작업1에서 편입할 HEAD와 미커밋 변경 처리 방법을 확정하고, 통합 대상 작업 트리가 깨끗한지 확인한다.
-- [ ] `stu2603`에 `integration/eval-stu` 브랜치를 만든다.
-- [ ] 다음 방식으로 이력을 편입한다. squash나 기존 커밋 이력 재작성은 하지 않는다.
+- [x] 작업1에서 편입할 HEAD와 미커밋 변경 처리 방법을 확정하고, 통합 대상 작업 트리가 깨끗한지 확인한다.
+- [x] `stu2603`에 `integration/eval-stu` 브랜치를 만든다.
+- [x] 다음 방식으로 이력을 편입한다. squash나 기존 커밋 이력 재작성은 하지 않는다.
 
 ```bash
 git -C ../stu2603 switch -c integration/eval-stu
 git -C ../stu2603 subtree add --prefix=eval ../eval-stu main
 ```
 
-- [ ] `eval/` 아래에 중첩 `.git`이 없는지 확인하고, 원래 `eval-stu` HEAD가 통합 HEAD의 조상에 포함되는지 확인한다.
-- [ ] 편입 전후 추적 파일 목록과 해시를 비교한다. 이후 링크 변경은 별도 커밋으로 구분한다.
+- [x] `eval/` 아래에 중첩 `.git`이 없는지 확인하고, 원래 `eval-stu` HEAD가 통합 HEAD의 조상에 포함되는지 확인한다.
+- [x] 편입 전후 추적 파일 목록과 해시를 비교한다. 이후 링크 변경은 별도 커밋으로 구분한다.
 
 **완료 기준:** 하나의 Git 이력에서 양쪽 과거 커밋을 참조할 수 있고 원래 두 디렉터리는 보존된다.
 
@@ -167,14 +167,14 @@ git -C ../stu2603 subtree add --prefix=eval ../eval-stu main
 
 **변경:** 루트 `.gitignore`, `eval/.gitignore`, 위 링크 목록, 절대경로를 사용하는 코드·설정·스킬.
 
-- [ ] 목표 구조의 표에 따라 `../stu2603` 참조를 저장소 내부 상대 링크로 바꾼다.
-- [ ] 루트 `1docs/deadline.csv`를 추적되는 설정 파일로 만들고 채점 쪽은 내부 링크로 연결한다. 이 단계에서 날짜 값은 바꾸지 않는다.
-- [ ] `eval/1docs/weekly-assignment-workflow.md`를 루트 `1docs/weekly-assignment-workflow.md`로 옮겨 공통 설명서를 한 벌로 유지한다.
-- [ ] 모든 깊이의 비밀 파일명과 `eval/output/`, `eval/9output/`, `eval/tmp/`, `eval/.venv/`, 성적 CSV/TSV를 제외한다. 일정 설정 CSV만 명시적으로 허용한다.
+- [x] 목표 구조의 표에 따라 `../stu2603` 참조를 저장소 내부 상대 링크로 바꾼다.
+- [x] 루트 `1docs/deadline.csv`를 추적되는 설정 파일로 만들고 채점 쪽은 내부 링크로 연결한다. 이 단계에서 날짜 값은 바꾸지 않는다.
+- [x] `eval/1docs/weekly-assignment-workflow.md`를 루트 `1docs/weekly-assignment-workflow.md`로 옮겨 공통 설명서를 한 벌로 유지한다.
+- [x] 모든 깊이의 비밀 파일명과 `eval/output/`, `eval/9output/`, `eval/tmp/`, `eval/.venv/`, 성적 CSV/TSV를 제외한다. 일정 설정 CSV만 명시적으로 허용한다.
 - [ ] `rg`로 기존 `/home/hyuk/prj/stu/eval-stu` 및 형제 저장소 참조를 찾아 현행 실행 경로를 수정한다. 이전 기록을 설명하는 문서상의 경로는 구분한다.
-- [ ] `eval/.venv`를 의존성 정의로부터 재생성한다. 옛 가상환경은 복사하지 않는다.
+- [x] `eval/.venv`를 의존성 정의로부터 재생성한다. 옛 가상환경은 복사하지 않는다.
 - [ ] 기존 `output/`, `9output/`의 필요한 산출물을 Git 미추적 위치로 복사하고 해시·건수를 대조한다. 비밀 파일은 복사 대상에서 제외한다.
-- [ ] GAS script ID, 시트 ID와 전용 크롬 프로필은 유지한다. 저장소 이전만을 이유로 재생성하지 않는다.
+- [x] GAS script ID, 시트 ID와 전용 크롬 프로필은 유지한다. 저장소 이전만을 이유로 재생성하지 않는다.
 
 **완료 기준:** 원래 `eval-stu` 절대경로 없이 자료와 설정을 찾을 수 있다. 비밀 파일·산출물은 `git check-ignore`로 제외되고 일정 CSV는 추적된다.
 
@@ -259,3 +259,37 @@ cd ../stu2603/eval
 - [ ] 기존 랩6 배정은 원래 해시와 내용을 유지한다.
 - [ ] 학생용 저장소 배포에 채점 데이터가 섞이지 않는다.
 - [ ] 채점 하네스·수정 주차 콘텐츠 검증이 통과하고 자동 실행이 중복되지 않는다.
+
+## 6. 실행 진행 경과 (Execution Log)
+
+### 2026-10-16 실행 기록
+
+1. **작업1: 현재 상태 보존 및 백업 (완료)**
+   - `eval-stu` 계획서 수정사항 커밋 완료: `2e06be9` (`docs: update repository unification plan with Git history and issue handling details`)
+   - 사전 안전 태그 생성: 양쪽 저장소 모두 `pre-unification-20261016` 태그 생성
+   - Git 번들 백업 생성:
+     - `eval-stu/tmp/eval-stu-pre-unification.bundle` (HEAD)
+     - `eval-stu/tmp/stu2603-pre-unification.bundle` (HEAD)
+   - 랩6 배정 산출물 해시 검증 및 보존 확인:
+     - `9output/week6_peer_review_assignments_15143.md`: `a7313db0b67cd6f59528334b7108b94bfda3eb9753ab5ee12c49682c03ae9a38`
+     - `9output/week6_peer_review_assignments_15144.md`: `851672a4cce13036b71fe0baf00365593e5743a5e053b534c0bfad50c1771537`
+
+2. **작업2: 이력 보존 서브트리 편입 (완료)**
+   - `stu2603`에 통합 전용 브랜치 생성: `integration/eval-stu`
+   - `git subtree add --prefix=eval ../eval-stu main` 실행으로 1,716개 오브젝트 및 커밋 히스토리 편입 완료 (커밋: `851210c`)
+   - `eval/` 하위 중첩 `.git` 없음 확인
+
+3. **작업3: 내부 참조 및 환경 정리 (진행 중 - 주요 항목 완료)**
+   - 내부 상대 심볼릭 링크 재설정 완료:
+     - `eval/5input/students` -> `../../5input/students`
+     - `eval/5input/py` -> `../../2python-output`
+     - `eval/5input/web` -> `../../3web-output`
+     - `eval/5input/deadline.csv` -> `../../1docs/deadline.csv`
+     - `eval/1docs/sheets.md` -> `../../1docs/sheets.md`
+     - `eval/1docs/scores.md` -> `../../1docs/scores.md`
+     - `eval/1docs/assignment-micro.md` -> `../../1docs/assignment-micro.md`
+     - `eval/1docs/email-rules.md` -> `../../4advices/email-rules.md`
+     - `eval/1docs/2603-cqi*.md` -> `../../output/cqi/2603-cqi*.md`
+   - 공통 문서 루트 일원화: `weekly-assignment-workflow.md`, `repository-unification-plan.md`를 루트 `1docs/`로 이동 및 `eval/1docs/` 심볼릭 링크 연결 완료
+   - Git Ignore 차단 검증 완료 (`git check-ignore -v`): `eval/output/`, `eval/9output/`, `eval/tmp/`, `eval/.venv/` 완벽 차단 확인
+   - 가상환경 재생성 완료: `stu2603/eval/.venv` 생성 및 `requirements.txt`, `requirements-test.txt` 설치 완료
