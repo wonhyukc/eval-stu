@@ -61,8 +61,8 @@ LATE_CUTOFF_HOURS = {
 }
 
 
-def setup_logging(task_id: str) -> logging.Logger:
-    """로그 파일 + 콘솔 동시 출력 설정."""
+def setup_logging(task_id: str) -> tuple[logging.Logger, "Path"]:
+    """로그 파일 + 콘솔 동시 출력 설정. (logger, log_file_path) 반환."""
     now_str = datetime.now(KST).strftime("%Y%m%d_%H%M%S")
     log_file = LOG_DIR / f"grade_{task_id}_{now_str}.log"
     logger = logging.getLogger("auto_grade")
@@ -76,7 +76,7 @@ def setup_logging(task_id: str) -> logging.Logger:
     ch.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(ch)
     logger.info(f"📝 로그 파일: {log_file}")
-    return logger
+    return logger, log_file
 
 
 def calculate_current_task() -> str:
@@ -646,10 +646,11 @@ def run_grading(
     student_filter: str | None = None,
     dry_run: bool = False,
     log: logging.Logger | None = None,
+    log_file: "Path | None" = None,
 ):
     """메인 채점 + 시트 동기화 + 답장 발송 파이프라인."""
     if log is None:
-        log = setup_logging(task_id)
+        log, log_file = setup_logging(task_id)
 
     log.info(f"{'='*60}")
     log.info(f"🎯 자동 채점 시작: 과제 {task_id}")
@@ -722,7 +723,29 @@ def run_grading(
                     tags="rotating_light",
                     priority="high",
                 )
+                # 재실행 안내
+                rerun_cmd = " ".join(sys.argv)
+                log.error("")
+                log.error("=" * 60)
+                log.error("🔐 Gmail 로그인이 필요합니다.")
+                log.error("")
+                log.error(
+                    "  전용 Chrome이 이미 떠 있다면, 해당 창에서 직접 Gmail에 로그인 후"
+                )
+                log.error("  아래 명령을 다시 실행하세요:")
+                log.error("")
+                log.error("  전용 Chrome이 떠 있지 않다면:")
+                log.error("    bin/start_grader_chrome.sh  # Chrome 백그라운드 기동")
+                log.error("    → 뜬 창에서 mail.google.com 접속 후 로그인")
+                log.error("")
+                log.error("  ▶ 재실행 명령:")
+                log.error(f"       {rerun_cmd}")
+                if log_file:
+                    log.error("")
+                    log.error(f"  📄 로그: {log_file}")
+                log.error("=" * 60)
                 return
+
             log.info(f"✅ Gmail 로드됨: {page.url}")
 
             # 검색 쿼리 구성
@@ -1386,7 +1409,7 @@ def main():
         grace_map = {"py": "4", "web1": "1", "web2": "2"}
         grace_track = grace_map[args.grace]
 
-    log = setup_logging(task_id)
+    log, log_file = setup_logging(task_id)
     log.info(
         f"🎓 auto_grade_email.py 시작 (task={task_id}, student={student_arg}, grace={args.grace}, dry_run={args.dry_run})"
     )
@@ -1397,6 +1420,7 @@ def main():
         student_filter=student_arg,
         dry_run=args.dry_run,
         log=log,
+        log_file=log_file,
     )
 
 
