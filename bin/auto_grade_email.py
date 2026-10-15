@@ -22,9 +22,9 @@ import re
 import subprocess
 import sys
 import time
-import email.utils
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 try:
     from playwright.sync_api import sync_playwright
@@ -96,55 +96,34 @@ def calculate_current_task() -> str:
     return task_id
 
 
+def read_task_schedule(task_id: str) -> dict:
+    """SSOT에 없는 주차나 날짜는 추측하지 않고 실행을 중단한다."""
+    import csv
+
+    week = str(int(task_id.split(".")[1]))
+    with (BASE_DIR / "5input" / "deadline.csv").open(encoding="utf-8") as f:
+        matches = [
+            row for row in csv.DictReader(f) if row.get("week", "").strip() == week
+        ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"deadline.csv에서 과제 {task_id} 일정을 유일하게 찾을 수 없습니다"
+        )
+    return matches[0]
+
+
 def get_deadline_dt(task_id: str) -> datetime:
-    """과제 번호로부터 마감 시각 계산 (5input/deadline.csv 기준 + 15분 유예)."""
-    wk_num = str(int(task_id.split(".")[1]))
-    csv_path = BASE_DIR / "5input" / "deadline.csv"
-    if csv_path.exists():
-        import csv
-
-        with open(csv_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                if str(row.get("week", "")).strip() == wk_num:
-                    email_dl = str(row.get("email-deadline", "")).strip()
-                    if email_dl:
-                        year = datetime.now(KST).year
-                        dt = datetime.strptime(f"{year}/{email_dl}", "%Y/%m/%d %H:%M")
-                        dt = dt.replace(tzinfo=KST)
-                        return dt + timedelta(minutes=15)
-
-    # fallback
-    wk_num_int = int(task_id.split(".")[1])
-    wk_start = SEMESTER_START + timedelta(weeks=wk_num_int - 1)
-    thu = wk_start + timedelta(days=3)
-    deadline = thu.replace(hour=23, minute=59, second=0) + timedelta(minutes=16)
-    return deadline
+    """CSV의 이메일 마감 + 15분 유예. 연도는 실행일이 아닌 학기 기준."""
+    value = read_task_schedule(task_id)["email-deadline"].strip()
+    dt = datetime.strptime(f"{SEMESTER_START.year}/{value}", "%Y/%m/%d %H:%M")
+    return dt.replace(tzinfo=KST) + timedelta(minutes=15)
 
 
 def get_late_cutoff_dt(task_id: str, track: str) -> datetime:
-    """트랙별 지각 마감 시각 (다음 월요일 수업 시작 시각)."""
-    wk_num = str(int(task_id.split(".")[1]))
-    hour = LATE_CUTOFF_HOURS.get(track, 16)
-    csv_path = BASE_DIR / "5input" / "deadline.csv"
-    if csv_path.exists():
-        import csv
-
-        with open(csv_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                if str(row.get("week", "")).strip() == wk_num:
-                    lab_dl = str(row.get("lab-deadline", "")).strip()
-                    if lab_dl:
-                        year = datetime.now(KST).year
-                        dt = datetime.strptime(f"{year}/{lab_dl}", "%Y/%m/%d")
-                        return dt.replace(hour=hour, minute=0, second=0, tzinfo=KST)
-
-    # fallback
-    wk_num_int = int(task_id.split(".")[1])
-    wk_start = SEMESTER_START + timedelta(weeks=wk_num_int - 1)
-    next_mon = wk_start + timedelta(days=7)  # 다음 주 월요일
-    return next_mon.replace(hour=hour, minute=0, second=0)
+    """CSV의 다음 수업일과 분반별 수업 시작 시각으로 지각 마감을 얻는다."""
+    value = read_task_schedule(task_id)["lab-deadline"].strip()
+    dt = datetime.strptime(f"{SEMESTER_START.year}/{value}", "%Y/%m/%d")
+    return dt.replace(hour=LATE_CUTOFF_HOURS[track], tzinfo=KST)
 
 
 def parse_students():
@@ -213,77 +192,97 @@ def parse_students():
     return students_by_id, name_to_id, email_to_id
 
 
+def build_search_url(query: str) -> str:
+    """검색어를 Gmail 해시 경로 한 구간으로 인코딩한다."""
+    return f"https://mail.google.com/mail/u/0/#search/{quote(query, safe='')}"
+
+
+def get_thread_id(row) -> str | None:
+    """Gmail 행 또는 자식 요소에 있는 스레드 식별자를 읽는다."""
+    for name in ("data-legacy-thread-id", "data-thread-id"):
+        value = row.get_attribute(name)
+        if not value:
+            child = row.locator(f"[{name}]")
+            if child.count():
+                value = child.first.get_attribute(name)
+        if value:
+            return value.removeprefix("#")
+    return None
+
+
+def resolve_student_id(subject, sender_email, sender_name, students, emails, names):
+    """명부의 발신 이메일, 제목 학번, 이름 순으로 학생을 식별한다.
+
+    끝 3자리는 독립된 숫자 토큰이며 명부에서 유일할 때만 인정한다.
+    과제 번호 0.123의 숫자는 학번으로 오인하지 않는다.
+    """
+    email_sid = emails.get(sender_email.strip().lower())
+    if email_sid in students:
+        return email_sid
+    full_ids = set(re.findall(r"(?<!\d)\d{10}(?!\d)", subject))
+    full_matches = full_ids.intersection(students)
+    if len(full_matches) == 1:
+        return full_matches.pop()
+    if full_ids:
+        return None
+    suffixes = set(re.findall(r"(?<![\w.])\d{3}(?![\w.])", subject))
+    matches = [sid for sid in students if sid[-3:] in suffixes]
+    if len(matches) == 1:
+        return matches[0]
+    clean_name = re.sub(r"\s+", "", sender_name).lower()
+    return names.get(clean_name)
+
+
+def build_grade_rows(final_list, students, task_id, track=None, student_id=None):
+    """대상 명부 전체의 제출/미제출 행을 생성한다 (기존 11열 입력 규격)."""
+    submissions = {item["student_info"]["id"]: item for item in final_list}
+    rows = []
+    for sid, info in students.items():
+        if (track and info["track"] != track) or (student_id and sid != student_id):
+            continue
+        item = submissions.get(sid)
+        reason_key = "reason_ko" if info["track"] == "4" else "reason_en"
+        missing_reason = "미제출" if info["track"] == "4" else "No submission"
+        rows.append(
+            [
+                0,
+                task_id.split(".")[1],
+                sid,
+                info["track"],
+                f"{item['score']:.2f}" if item else "0.00",
+                "hw",
+                task_id,
+                item[reason_key] if item else missing_reason,
+                item["date"] if item else "",
+                "",
+                item["subject"] if item else "",
+            ]
+        )
+    return rows
+
+
+def sync_grade_rows(rows):
+    """분반별 저장 성공을 확인한 후에만 답장 단계로 진행한다."""
+    synced = False
+    for track, course in (("4", "py"), ("1", "web1"), ("2", "web2")):
+        course_rows = [row for row in rows if row[3] == track]
+        if not course_rows:
+            continue
+        if synced:
+            time.sleep(65)  # 여러 분반 연속 저장 시 Sheets 분당 쓰기 할당량 보호
+        if not upsert_grades_to_sheet(course_rows, course=course):
+            raise RuntimeError(f"{course} 시트 저장 실패: 답장 발송 중단")
+        synced = True
+
+
 def parse_gmail_date(
     date_str: str, log: logging.Logger | None = None
 ) -> datetime | None:
-    """Gmail 타임스탬프 문자열을 KST datetime으로 안전하게 파싱한다.
-
-    Gmail 웹 UI 언어 설정(영어, 한국어 등) 및 타임존 누락 형태를 모두 처리한다.
-    UI에 표시되는 시각은 이미 사용자 로컬(KST) 기준이므로 tzinfo가 없으면 KST로 처리한다.
-    """
-    if not date_str or not date_str.strip():
-        return None
-    raw = date_str.strip()
-
-    # Gmail UI의 AM/PM은 RFC 파서가 무시하므로 먼저 명시적으로 해석한다.
-    has_am_pm = bool(re.search(r"\b(?:AM|PM)\b", raw, re.IGNORECASE))
-    if has_am_pm:
-        dt = parse_submission_datetime(raw)
-        if dt is not None:
-            return dt
-
-    # 1차 시도: email.utils (RFC 2822 / 표준 날짜 형식, AM/PM 없는 경우만)
-    if not has_am_pm:
-        try:
-            dt = email.utils.parsedate_to_datetime(raw)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=KST)
-            else:
-                dt = dt.astimezone(KST)
-            return dt
-        except Exception:
-            pass
-
-    # 2차 시도: dateutil.parser (영어 구문 e.g. 'Sep 28, 2026, 9:20 AM')
-    try:
-        import dateutil.parser
-
-        dt = dateutil.parser.parse(raw)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=KST)
-        else:
-            dt = dt.astimezone(KST)
-        return dt
-    except Exception:
-        pass
-
-    # 3차 시도: 한국어 Gmail 포맷 (e.g. '2026년 9월 28일 (일) 오전 9:20' 또는 '9월 28일 (일) 오후 3:11')
-    m_kor = re.search(
-        r"(?:(\d{4})년\s*)?(\d{1,2})월\s*(\d{1,2})일.*?((?:오전|오후)\s*\d{1,2}:\d{2})",
-        raw,
-    )
-    if m_kor:
-        try:
-            year = int(m_kor.group(1)) if m_kor.group(1) else datetime.now(KST).year
-            month = int(m_kor.group(2))
-            day = int(m_kor.group(3))
-            time_part = m_kor.group(4)
-            is_pm = "오후" in time_part
-            t_match = re.search(r"(\d{1,2}):(\d{2})", time_part)
-            if t_match:
-                hour = int(t_match.group(1))
-                minute = int(t_match.group(2))
-                if is_pm and hour < 12:
-                    hour += 12
-                elif not is_pm and hour == 12:
-                    hour = 0
-                return datetime(year, month, day, hour, minute, 0, tzinfo=KST)
-        except Exception:
-            pass
-
-    if log:
-        log.warning(f"   ⚠️ 날짜 파싱 실패: '{raw}'")
-    return None
+    """공통 날짜 파서로 Gmail 표시 언어와 무관하게 KST 시각을 얻는다."""
+    result = parse_submission_datetime(date_str)
+    if result is None and log:
+        log.warning(f"   ⚠️ 날짜 파싱 실패: '{date_str}'")
+    return result
 
 
 def evaluate_submission(
@@ -348,29 +347,26 @@ def evaluate_submission(
             if log:
                 log.info(f"   [채점판정] 정규기한내제출 ({email_dt} <= {deadline_dt})")
     else:
-        if log:
-            log.warning("   [기한검사] email_dt 없음(파싱실패 등) → 리뷰 필요 처리")
-        return (
-            0.7,
-            "Time unknown - needs review",
-            "시각 식별 불가 - 리뷰 필요",
-            "Needs manual check for sent_at",
+        raise OriginalSubmissionError(
+            "원본 발송 시각을 확인할 수 없어 채점을 중단합니다"
         )
 
     # 3. 제목 검사
     clean_sub = re.sub(
         r"^(\s*re:\s*|\s*fwd:\s*)+", "", subject, flags=re.IGNORECASE
     ).strip()
-    clean_sub_nospace = re.sub(r"\s+", "", clean_sub).lower()
     sid = student_info["id"] if student_info else ""
     task_num = task_id  # e.g. "0.3"
 
     # 정확한 형식: (과제|assignment)\s*0\.x\s*10자리학번
-    exact_pattern = rf"^(과제|assignment)\s*{re.escape(task_num)}\s*{sid}$"
-    is_exact = bool(re.match(exact_pattern, clean_sub, re.IGNORECASE))
+    exact_pattern = rf"^(과제|assignment)\s*{re.escape(task_num)}\s*{re.escape(sid)}$"
+    is_exact = bool(sid and re.match(exact_pattern, clean_sub, re.IGNORECASE))
 
-    has_task = task_num in clean_sub_nospace
-    has_id = (sid in clean_sub) or bool(re.search(r"2026\d{6}", clean_sub))
+    has_task = is_exact or bool(
+        re.search(rf"(?<![\d.]){re.escape(task_num)}(?!\d)", clean_sub)
+    )
+    subject_ids = re.findall(r"(?<!\d)\d{10}(?!\d)", clean_sub)
+    has_id = sid in subject_ids if sid else bool(subject_ids)
 
     if not is_late:
         if is_exact:
@@ -701,7 +697,7 @@ def run_grading(
             tags="rotating_light",
             priority="high",
         )
-        return
+        return False
 
     stats = {"graded": 0, "replied": 0, "failed": 0, "skipped": 0}
 
@@ -710,6 +706,9 @@ def run_grading(
             browser = p.chromium.connect_over_cdp(f"http://localhost:{CDP_PORT}")
             context = browser.contexts[0]
             page = context.pages[0] if context.pages else context.new_page()
+            context.new_cdp_session(page).send(
+                "Emulation.setTimezoneOverride", {"timezoneId": "Asia/Seoul"}
+            )
 
             # Gmail 이동 및 로그인 여부 확인
             if "mail.google.com" not in page.url:
@@ -744,7 +743,7 @@ def run_grading(
                     log.error("")
                     log.error(f"  📄 로그: {log_file}")
                 log.error("=" * 60)
-                return
+                return False
 
             log.info(f"✅ Gmail 로드됨: {page.url}")
 
@@ -752,7 +751,7 @@ def run_grading(
             task_num = task_id  # "0.4"
             wk_num = int(task_id.split(".")[1])
             wk_start = SEMESTER_START + timedelta(weeks=wk_num - 1)
-            search_after = wk_start.strftime("%Y/%m/%d")
+            search_after = wk_start.strftime("%Y-%m-%d")
             if target_student_id:
                 target_email = students_by_id.get(target_student_id, {}).get(
                     "email", ""
@@ -774,10 +773,8 @@ def run_grading(
             log.info(f"🔍 Gmail 검색: {search_query}")
 
             # 검색창 UI 대신 Gmail 검색 URL로 직접 이동
-            import urllib.parse
-
-            encoded = urllib.parse.quote(search_query)
-            page.goto(f"https://mail.google.com/mail/u/0/#search/{encoded}")
+            search_url = build_search_url(search_query)
+            page.goto(search_url)
             page.wait_for_load_state("domcontentloaded", timeout=20000)
             page.wait_for_timeout(5000)
 
@@ -792,8 +789,8 @@ def run_grading(
                     f"{task_num} after:{search_after} "
                     f"-from:comments-noreply@docs.google.com"
                 )
-                encoded_fb = urllib.parse.quote(fallback_query)
-                page.goto(f"https://mail.google.com/mail/u/0/#search/{encoded_fb}")
+                search_url = build_search_url(fallback_query)
+                page.goto(search_url)
                 page.wait_for_load_state("domcontentloaded", timeout=20000)
                 page.wait_for_timeout(5000)
                 dismiss_popups(page, log)
@@ -857,50 +854,30 @@ def run_grading(
                             date_str = date_el.first.inner_text()
 
                         # 스레드 ID 추출
-                        thread_id = row.get_attribute(
-                            "data-legacy-thread-id"
-                        ) or row.get_attribute("data-thread-id")
+                        thread_id = get_thread_id(row)
 
-                        # student_filter 고속 스킵
-                        if target_student_id:
-                            fast_match = (
-                                (target_student_id in subject)
-                                or (student_filter and student_filter in subject)
-                                or (student_filter and student_filter in sender_name)
+                        sender_email = (
+                            sender_el.first.get_attribute("email") or ""
+                            if sender_el.count()
+                            else ""
+                        )
+                        fast_sid = resolve_student_id(
+                            subject,
+                            sender_email,
+                            sender_name,
+                            students_by_id,
+                            email_to_id,
+                            name_to_id,
+                        )
+                        if fast_sid and (
+                            (target_student_id and fast_sid != target_student_id)
+                            or (
+                                grace_track
+                                and students_by_id[fast_sid]["track"] != grace_track
                             )
-                            m_id = re.search(r"2026\d{6}", subject)
-                            if m_id:
-                                sid_found = m_id.group(0)
-                                if sid_found == target_student_id or (
-                                    student_filter
-                                    and sid_found.endswith(student_filter)
-                                ):
-                                    fast_match = True
-                            # 제목에서 다른 학생으로 확정된 경우만 건너뛴다.
-                            # 학번 없는 최신 제출은 상세 발신자 이메일로 확인해야 한다.
-                            if m_id and not fast_match:
-                                log.info(
-                                    f"   [{idx + 1}/{row_count}] ⏭️ 고속 스킵 "
-                                    f"'{subject}' ({sender_name})"
-                                )
-                                stats["skipped"] += 1
-                                continue
-
-                        # Grace-period 고속 스킵
-                        if grace_track:
-                            fast_sid = None
-                            m_id = re.search(r"2026\d{6}", subject)
-                            if m_id:
-                                fast_sid = m_id.group(0)
-                            if fast_sid and fast_sid in students_by_id:
-                                fast_track = students_by_id[fast_sid]["track"]
-                                if fast_track != grace_track:
-                                    log.info(
-                                        f"   [{idx + 1}/{row_count}] ⏭️ 트랙 스킵 "
-                                        f"({fast_track}≠{grace_track}) '{subject}'"
-                                    )
-                                    stats["skipped"] += 1
-                                    continue
+                        ):
+                            stats["skipped"] += 1
+                            continue
 
                         thread_metas.append(
                             {
@@ -911,9 +888,9 @@ def run_grading(
                             }
                         )
                     except Exception as e:
-                        log.warning(
-                            f"   [{idx + 1}/{row_count}] ⚠️ 목록 행 파싱 오류: {e}"
-                        )
+                        raise OriginalSubmissionError(
+                            "검색 목록을 완전히 읽지 못해 채점을 중단합니다"
+                        ) from e
 
                 # 다음 페이지 버튼 확인
                 dismiss_popups(page, log)
@@ -960,16 +937,13 @@ def run_grading(
                 try:
                     # 스레드 URL로 직접 이동 (Back 왕복 완전 제거)
                     if thread_id:
-                        thread_url = (
-                            f"https://mail.google.com/mail/u/0/"
-                            f"#search/{encoded}/{thread_id}"
-                        )
+                        thread_url = f"{search_url}/{thread_id}"
                     else:
                         # thread_id 없으면 검색 목록에서 제목으로 매칭
                         log.warning(
                             "   ⚠️ thread_id 없음 → 검색 목록에서 제목 매칭 시도"
                         )
-                        page.goto(f"https://mail.google.com/mail/u/0/#search/{encoded}")
+                        page.goto(search_url)
                         page.wait_for_timeout(4000)
                         dismiss_popups(page, log)
                         matching_row = page.locator(
@@ -1018,9 +992,11 @@ def run_grading(
                             is_replied = True
                         else:
                             body_el = m.locator("div.a3s.aiL")
-                            body_text = (
-                                body_el.inner_text() if body_el.count() > 0 else ""
-                            )
+                            if body_el.count() == 0:
+                                raise OriginalSubmissionError(
+                                    "원본 본문이 로드되지 않아 채점을 중단합니다"
+                                )
+                            body_text = body_el.inner_text()
                             d_el = m.locator("span.g3")
                             m_date_str = ""
                             if d_el.count() > 0:
@@ -1047,23 +1023,14 @@ def run_grading(
                     last_msg_body = student_submission_msg["body"]
                     last_msg_date_str = student_submission_msg["date_str"]
 
-                    # 학번 추출
-                    extracted_sid = None
-                    m_id = re.search(r"2026\d{6}", subject)
-                    if m_id:
-                        extracted_sid = m_id.group(0)
-                    if not extracted_sid and last_sender_email:
-                        clean_email = last_sender_email.lower().strip()
-                        if clean_email in email_to_id:
-                            extracted_sid = email_to_id[clean_email]
-                        else:
-                            m_em = re.search(r"2026\d{6}", clean_email)
-                            if m_em:
-                                extracted_sid = m_em.group(0)
-                    if not extracted_sid and sender_name:
-                        clean_name = re.sub(r"\s+", "", sender_name).lower()
-                        if clean_name in name_to_id:
-                            extracted_sid = name_to_id[clean_name]
+                    extracted_sid = resolve_student_id(
+                        subject,
+                        last_sender_email,
+                        sender_name,
+                        students_by_id,
+                        email_to_id,
+                        name_to_id,
+                    )
 
                     student_info = (
                         students_by_id.get(extracted_sid) if extracted_sid else None
@@ -1115,7 +1082,7 @@ def run_grading(
 
                     # 날짜 파싱
                     email_dt = student_submission_msg["sent_at"]
-                    formatted_date = email_dt.strftime("%-m/%-d")
+                    formatted_date = email_dt.strftime("%m/%d %H:%M")
                     dt_str = email_dt.strftime("%Y-%m-%d %H:%M:%S %Z")
                     log.info(
                         f"   📅 발송일시: {dt_str} "
@@ -1195,52 +1162,20 @@ def run_grading(
                 )
 
             # Step 4: 시트 동기화
-            wk_num = task_id.split(".")[1]
             if not dry_run:
                 log.info("\n🚀 [Step 4] 구글 시트 멱등 Upsert...")
-                py_rows = []
-                web_rows = []
-
-                for item in final_list:
-                    s_info = item["student_info"]
-                    # 11열 구조: No, wk, ID, Track, Score, Type1, Type2, Reason, Date, Name, Subject
-                    if s_info["track"] == "4":
-                        row = [
-                            0,
-                            wk_num,
-                            s_info["id"],
-                            "4",
-                            f"{item['score']:.2f}",
-                            "hw",
-                            task_id,
-                            item["reason_ko"],
-                            item["date"],
-                            s_info["eng_name"],
-                            item["subject"],
-                        ]
-                        py_rows.append(row)
-                    else:
-                        row = [
-                            0,
-                            wk_num,
-                            s_info["id"],
-                            s_info["track"],
-                            f"{item['score']:.2f}",
-                            "hw",
-                            task_id,
-                            item["reason_en"],
-                            item["date"],
-                            s_info["eng_name"],
-                            item["subject"],
-                        ]
-                        web_rows.append(row)
-
-                if py_rows:
-                    log.info(f"📝 파이썬 4반: {len(py_rows)}건 Upsert")
-                    upsert_grades_to_sheet(py_rows, course="py")
-                if web_rows:
-                    log.info(f"📝 웹 1/2반: {len(web_rows)}건 Upsert")
-                    upsert_grades_to_sheet(web_rows, course="web")
+                if stats["failed"]:
+                    raise RuntimeError(
+                        "메일 수집 오류가 있어 시트 저장 및 답장을 중단합니다"
+                    )
+                grade_rows = build_grade_rows(
+                    final_list,
+                    students_by_id,
+                    task_id,
+                    track=grace_track,
+                    student_id=target_student_id,
+                )
+                sync_grade_rows(grade_rows)
             else:
                 log.info("\n⏭️ [Step 4] DRY-RUN: 시트 동기화 생략")
 
@@ -1304,6 +1239,8 @@ def run_grading(
     except Exception as e:
         log.error(f"❌ 치명적 오류: {e}")
         stats["failed"] += 1
+    finally:
+        stop_chrome(log)
 
     # 결과 요약
     summary = (
@@ -1323,6 +1260,7 @@ def run_grading(
         send_alert(
             f"📊 과제 {task_id} 채점 완료", summary, tags=tags, priority=priority
         )
+    return stats["failed"] == 0
 
 
 def main():
@@ -1414,7 +1352,7 @@ def main():
         f"🎓 auto_grade_email.py 시작 (task={task_id}, student={student_arg}, grace={args.grace}, dry_run={args.dry_run})"
     )
 
-    run_grading(
+    success = run_grading(
         task_id,
         grace_track=grace_track,
         student_filter=student_arg,
@@ -1422,6 +1360,8 @@ def main():
         log=log,
         log_file=log_file,
     )
+    if not success:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

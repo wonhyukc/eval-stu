@@ -9,6 +9,27 @@ from urllib.parse import urlsplit
 
 KST = timezone(timedelta(hours=9))
 INSTRUCTOR_EMAIL = "wonhyukc@stu.ac.kr"
+ENGLISH_MONTHS = {
+    name: index
+    for index, names in enumerate(
+        (
+            ("jan", "january"),
+            ("feb", "february"),
+            ("mar", "march"),
+            ("apr", "april"),
+            ("may",),
+            ("jun", "june"),
+            ("jul", "july"),
+            ("aug", "august"),
+            ("sep", "september"),
+            ("oct", "october"),
+            ("nov", "november"),
+            ("dec", "december"),
+        ),
+        start=1,
+    )
+    for name in names
+}
 
 
 class OriginalSubmissionError(ValueError):
@@ -130,9 +151,15 @@ def has_valid_submission_body(body_html: str) -> bool:
     )
 
 
-def parse_submission_datetime(raw: str) -> datetime | None:
-    """날짜와 시각이 있는 Gmail 상세 타임스탬프만 KST로 변환한다."""
-    raw = raw.strip()
+def parse_submission_datetime(
+    raw: str, reference_year: int | None = None
+) -> datetime | None:
+    """명시적인 한글·영문·ISO·RFC 형식을 KST로 변환한다.
+
+    월/일 순서를 추측하지 않는다. UI의 시간대 없는 시각은 전용 브라우저의
+    Asia/Seoul 시각으로 취급하며, 명시된 UTC 오프셋은 보존하여 환산한다.
+    """
+    raw = re.sub(r"\s+", " ", raw).strip()
     if not re.search(r"\d{1,2}:\d{2}", raw):
         return None
 
@@ -149,7 +176,7 @@ def parse_submission_datetime(raw: str) -> datetime | None:
                 return None
             hour_num = hour_num % 12 + (12 if am_pm == "오후" else 0)
             return datetime(
-                int(year) if year else datetime.now(KST).year,
+                int(year) if year else reference_year or datetime.now(KST).year,
                 int(month),
                 int(day),
                 hour_num,
@@ -160,23 +187,45 @@ def parse_submission_datetime(raw: str) -> datetime | None:
         except ValueError:
             return None
 
-    # RFC 파서는 Gmail 영문 표시의 AM/PM을 무시하므로 별도로 처리한다.
+    # ISO 형식은 연도 우선 표기만 허용하여 10/11 같은 모호한 입력을 차단한다.
+    if re.match(r"^\d{4}-\d{2}-\d{2}[T ]", raw):
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            return (
+                parsed.replace(tzinfo=KST)
+                if parsed.tzinfo is None
+                else parsed.astimezone(KST)
+            )
+        except ValueError:
+            return None
+
+    # %b/%B/%p는 OS 로캘에 의존하므로 영문 월과 AM/PM을 직접 해석한다.
+    english = re.fullmatch(
+        r"(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?"
+        r"([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4}),?\s+"
+        r"(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if english:
+        month, day, year, hour, minute, second, am_pm = english.groups()
+        month_num = ENGLISH_MONTHS.get(month.lower())
+        if month_num is None or not 1 <= int(hour) <= 12:
+            return None
+        try:
+            return datetime(
+                int(year),
+                month_num,
+                int(day),
+                int(hour) % 12 + (12 if am_pm.upper() == "PM" else 0),
+                int(minute),
+                int(second or 0),
+                tzinfo=KST,
+            )
+        except ValueError:
+            return None
+    # AM/PM 표기가 있는데 명시 형식과 다르면 RFC 파서에 넘기지 않는다.
     if re.search(r"\b(?:AM|PM)\b", raw, re.IGNORECASE):
-        clean = re.sub(
-            r"^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s*",
-            "",
-            raw,
-            flags=re.IGNORECASE,
-        )
-        clean = re.sub(r"[,\s]+", " ", clean).strip()
-        for month_format in ("%b", "%B"):
-            for time_format in ("%I:%M %p", "%I:%M:%S %p"):
-                try:
-                    return datetime.strptime(
-                        clean, f"{month_format} %d %Y {time_format}"
-                    ).replace(tzinfo=KST)
-                except ValueError:
-                    pass
         return None
 
     try:
@@ -201,7 +250,7 @@ def select_latest_submission(
         if not isinstance(sent_at, datetime) or sent_at.tzinfo is None:
             raise OriginalSubmissionError("학생 원본 발송 시각을 확인할 수 없습니다.")
     on_time = (
-        [s for s in submissions if s["sent_at"] < grace_deadline]
+        [s for s in submissions if s["sent_at"] <= grace_deadline]
         if grace_deadline is not None
         else []
     )
@@ -244,7 +293,10 @@ def select_original_submission(
             continue
         if not sender:
             raise OriginalSubmissionError("원본 메시지 발신자를 확인할 수 없습니다.")
-        sent_at = parse_submission_datetime(message.get("date_str", ""))
+        reference = start_time or grace_deadline
+        sent_at = parse_submission_datetime(
+            message.get("date_str", ""), reference.year if reference else None
+        )
         if sent_at is None:
             raise OriginalSubmissionError("학생 원본 발송 시각을 확인할 수 없습니다.")
         if start_time is not None and sent_at < start_time:

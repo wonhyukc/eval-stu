@@ -29,37 +29,20 @@ def load_course_config(base_dir, course="py"):
 
 
 def get_sheet_service(base_dir):
-    # 크레덴셜 후보 경로 순서대로 탐색
-    candidates = [
-        os.path.join(base_dir, "secret.json"),
-        os.path.expanduser("~/nvme_data/prj/exchange/service-account.json"),
-    ]
-    secret_path = next((p for p in candidates if os.path.exists(p)), None)
+    # 인증 파일은 읽지 않는다. 프로젝트 승인 경로인 OS 키링만 사용한다.
+    import subprocess
 
-    if secret_path:
-        creds = Credentials.from_service_account_file(secret_path, scopes=SCOPES)
-    else:
-        try:
-            import subprocess
-
-            res = subprocess.run(
-                ["secret-tool", "lookup", "Title", "drive-api"],
-                capture_output=True,
-                text=True,
-            )
-            if res.stdout.strip():
-                data = json.loads(res.stdout.strip())
-                creds = Credentials.from_service_account_info(data, scopes=SCOPES)
-            else:
-                print(
-                    "ℹ️ 서비스 계정 키 파일이 없으므로 Application Default Credentials를 시도합니다."
-                )
-                creds, _ = google.auth.default(scopes=SCOPES)
-        except Exception:
-            print(
-                "ℹ️ 서비스 계정 키 파일이 없으므로 Application Default Credentials를 시도합니다."
-            )
-            creds, _ = google.auth.default(scopes=SCOPES)
+    res = subprocess.run(
+        ["secret-tool", "lookup", "Title", "drive-api"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    if not res.stdout.strip():
+        raise RuntimeError("OS 키링에 drive-api 인증 정보가 없습니다")
+    data = json.loads(res.stdout)
+    creds = Credentials.from_service_account_info(data, scopes=SCOPES)
 
     # cache_discovery=False 로 무한 지연 에러 원천 차단
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
