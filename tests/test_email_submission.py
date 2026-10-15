@@ -23,6 +23,11 @@ from modules.email_submission import (
         ("Thu, 1 Oct 2026 16:05:00 +0000", (2026, 10, 2, 1, 5, 0)),
         ("Thu, 1 Oct 2026 16:05:00 +0900", (2026, 10, 1, 16, 5, 0)),
         ("Thu, 1 Oct 2026 16:05:00", (2026, 10, 1, 16, 5, 0)),
+        ("Oct 15, 2026, 10:43\u202fPM", (2026, 10, 15, 22, 43, 0)),
+        ("Thu, Oct 15, 2026, 11:46\u00a0PM", (2026, 10, 15, 23, 46, 0)),
+        ("2026-10-15T13:43:00Z", (2026, 10, 15, 22, 43, 0)),
+        ("2026-10-15T22:43:00+09:00", (2026, 10, 15, 22, 43, 0)),
+        ("2026-10-15 22:43:00", (2026, 10, 15, 22, 43, 0)),
     ],
 )
 def test_parse_original_timestamp(raw, expected):
@@ -37,10 +42,85 @@ def test_parse_original_timestamp(raw, expected):
         "Oct 1, 2026",
         "2026년 2월 30일 오전 9:00",
         "2026년 10월 1일 오후 27:00",
+        "10/11/2026 09:00",
+        "11/10/2026 09:00",
+        "Fri, Oct 16, 2026, 13:00 PM",
+        "Fri, Oct 16, 2026, 00:00 AM",
+        "2026-02-30T12:00:00+09:00",
     ],
 )
 def test_invalid_original_timestamp_is_not_invented(raw):
     assert parse_submission_datetime(raw) is None
+
+
+@pytest.mark.parametrize(
+    "english,korean,iso,expected_score",
+    [
+        (
+            "Oct 16, 2026, 12:00 AM",
+            "2026년 10월 16일 (금) 오전 12:00",
+            "2026-10-16T00:00:00+09:00",
+            1.0,
+        ),
+        (
+            "Oct 16, 2026, 12:15 AM",
+            "2026년 10월 16일 (금) 오전 12:15",
+            "2026-10-16T00:15:00+09:00",
+            1.0,
+        ),
+        (
+            "Oct 16, 2026, 12:16 AM",
+            "2026년 10월 16일 (금) 오전 12:16",
+            "2026-10-16T00:16:00+09:00",
+            0.5,
+        ),
+        (
+            "Oct 19, 2026, 12:00 PM",
+            "2026년 10월 19일 (월) 오후 12:00",
+            "2026-10-19T12:00:00+09:00",
+            0.5,
+        ),
+        (
+            "Oct 19, 2026, 4:00 PM",
+            "2026년 10월 19일 (월) 오후 4:00",
+            "2026-10-19T16:00:00+09:00",
+            0.0,
+        ),
+    ],
+)
+def test_display_language_does_not_change_grading(english, korean, iso, expected_score):
+    from bin.auto_grade_email import evaluate_submission, parse_gmail_date
+
+    expected = datetime.fromisoformat(iso)
+    for raw in (english, korean, iso):
+        assert parse_submission_datetime(raw) == expected
+        assert parse_gmail_date(raw) == expected
+    student = {"id": "2026000123", "track": "1"}
+    scores = [
+        evaluate_submission(
+            "Assignment 0.7 2026000123",
+            "https://example.test/work",
+            student,
+            parse_submission_datetime(raw),
+            "0.7",
+        )[0]
+        for raw in (english, korean, iso)
+    ]
+    assert scores == [expected_score] * 3
+
+
+def test_english_month_parser_does_not_use_locale_strptime(monkeypatch):
+    from modules import email_submission
+
+    class WithoutLocaleParser(datetime):
+        @classmethod
+        def strptime(cls, *args):
+            raise AssertionError("로캘 의존 파서 호출 금지")
+
+    monkeypatch.setattr(email_submission, "datetime", WithoutLocaleParser)
+    assert parse_submission_datetime("October 15, 2026, 10:43 PM") == datetime(
+        2026, 10, 15, 22, 43, tzinfo=KST
+    )
 
 
 def test_original_message_requires_sender_identity():
@@ -61,8 +141,8 @@ def test_no_messages_are_not_a_submission():
         (["10/02 10:00", "10/01 22:00"], 1),
         (["10/02 10:00", "10/03 09:00"], 1),
         (["10/03 09:00", "10/02 10:00"], 0),
-        (["10/02 00:15", "10/02 00:16"], 1),
-        (["10/02 00:14", "10/02 00:15"], 0),
+        (["10/02 00:15", "10/02 00:16"], 0),
+        (["10/02 00:14", "10/02 00:15"], 1),
     ],
 )
 def test_original_submission_selects_latest_with_grace_priority(
@@ -131,6 +211,15 @@ def test_unknown_timestamp_cannot_silently_choose_an_older_submission():
             ],
             grace,
         )
+
+
+def test_yearless_ui_timestamp_uses_assignment_year():
+    result = select_original_submission(
+        [{"sender_email": "s@example.test", "date_str": "10월 1일 (목) 오후 10:00"}],
+        datetime(2020, 10, 2, 0, 15, tzinfo=KST),
+        datetime(2020, 9, 28, tzinfo=KST),
+    )
+    assert result["sent_at"] == datetime(2020, 10, 1, 22, tzinfo=KST)
 
 
 def test_messages_before_collection_window_do_not_override_current_late_submission():

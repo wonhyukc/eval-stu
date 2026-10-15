@@ -26,7 +26,9 @@ def _element(text="", **attributes):
 
 @pytest.fixture
 def auto_grader(monkeypatch):
-    def run(thread_pages, student_filter=None):
+    def run(
+        thread_pages, student_filter=None, upload_success=True, expect_failure=False
+    ):
         state = {"page": 0, "thread": ""}
         threads = {}
         pages = []
@@ -115,6 +117,8 @@ def auto_grader(monkeypatch):
         }
         monkeypatch.setattr(engine, "sync_playwright", lambda: playwright)
         monkeypatch.setattr(engine, "ensure_chrome_running", lambda log: True)
+        stop = MagicMock()
+        monkeypatch.setattr(engine, "stop_chrome", stop)
         monkeypatch.setattr(engine, "dismiss_popups", MagicMock())
         monkeypatch.setattr(
             engine,
@@ -128,12 +132,22 @@ def auto_grader(monkeypatch):
             lambda *args: datetime(2026, 10, 5, 16, tzinfo=engine.KST),
         )
         monkeypatch.setattr(engine, "send_alert", MagicMock())
-        upload = MagicMock()
+        upload = MagicMock(return_value=upload_success)
         monkeypatch.setattr(engine, "upsert_grades_to_sheet", upload)
         log = MagicMock()
 
-        engine.run_grading("0.5", student_filter=student_filter, log=log)
+        success = engine.run_grading("0.5", student_filter=student_filter, log=log)
+        stop.assert_called_once()
+        context.new_cdp_session.return_value.send.assert_called_once_with(
+            "Emulation.setTimezoneOverride", {"timezoneId": "Asia/Seoul"}
+        )
+        if expect_failure:
+            assert success is False
+            assert log.error.called
+            textbox.fill.assert_not_called()
+            return upload
 
+        assert success is True
         log.error.assert_not_called()
         assert upload.call_count == 1
         assert len(upload.call_args.args[0]) == 1
@@ -151,28 +165,28 @@ def auto_grader(monkeypatch):
             ["https://example.test/old", "https://example.test/new"],
             [f"Assignment 0.5 {SID}", f"Assignment 0.5 [{SID}]"],
             0.9,
-            "10/1",
+            "10/01 22:00",
         ),
         (
             ["Fri, 2 Oct 2026 10:00:00 +0900", "Thu, 1 Oct 2026 22:00:00 +0900"],
             ["https://example.test/late", "https://example.test/on-time"],
             [f"Assignment 0.5 {SID}"] * 2,
             1.0,
-            "10/1",
+            "10/01 22:00",
         ),
         (
             ["Fri, 2 Oct 2026 10:00:00 +0900", "Sat, 3 Oct 2026 09:00:00 +0900"],
             ["https://example.test/late", ""],
             [f"Assignment 0.5 {SID}"] * 2,
             0.0,
-            "10/3",
+            "10/03 09:00",
         ),
         (
             ["Thu, 1 Oct 2026 09:00:00 +0900", "Thu, 1 Oct 2026 22:00:00 +0900"],
             ["https://example.test/old", "https://example.test/new"],
             [f"Assignment 0.5 {SID}", "Assignment 0.5"],
             0.7,
-            "10/1",
+            "10/01 22:00",
         ),
     ],
 )
@@ -214,4 +228,30 @@ def test_auto_selects_latest_on_time_message_within_thread(auto_grader):
         [[{"subject": f"Assignment 0.5 {SID}", "messages": messages}]]
     )
     assert float(row[4]) == 0.0
-    assert row[8] == "10/1"
+    assert row[8] == "10/01 22:00"
+
+
+def test_sheet_failure_does_not_send_feedback(auto_grader):
+    item = {
+        "subject": f"Assignment 0.5 {SID}",
+        "messages": [_message("Oct 1, 2026, 10:00 PM")],
+    }
+    upload = auto_grader([[item]], upload_success=False, expect_failure=True)
+    upload.assert_called_once()
+
+
+def test_ambiguous_timestamp_preserves_sheet_and_sends_nothing(auto_grader):
+    item = {
+        "subject": f"Assignment 0.5 {SID}",
+        "messages": [_message("10/01/2026 10:00")],
+    }
+    upload = auto_grader([[item]], expect_failure=True)
+    upload.assert_not_called()
+
+
+def test_no_submissions_records_zero_for_roster(auto_grader):
+    row, _, textbox = auto_grader([[]])
+    assert row[2] == SID
+    assert row[4] == "0.00"
+    assert row[7] == "No submission"
+    textbox.fill.assert_not_called()

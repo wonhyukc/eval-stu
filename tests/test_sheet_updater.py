@@ -9,6 +9,43 @@ from modules.sheet_updater import normalize_row_to_11cols, route_web_rows
 from modules.grader import grade_assignment
 
 
+def test_sheet_auth_uses_keyring_without_reading_files(monkeypatch):
+    import json
+    from unittest.mock import MagicMock
+    from modules import sheet_updater
+
+    result = MagicMock(stdout=json.dumps({"test": "keyring-value"}))
+    run = MagicMock(return_value=result)
+    monkeypatch.setattr("subprocess.run", run)
+    credentials = MagicMock()
+    monkeypatch.setattr(sheet_updater, "Credentials", credentials)
+    build = MagicMock()
+    monkeypatch.setattr(sheet_updater, "build", build)
+    forbidden_open = MagicMock(side_effect=AssertionError("인증 파일 접근 금지"))
+    monkeypatch.setattr("builtins.open", forbidden_open)
+    assert sheet_updater.get_sheet_service("/unused") == build.return_value
+    credentials.from_service_account_info.assert_called_once_with(
+        {"test": "keyring-value"}, scopes=sheet_updater.SCOPES
+    )
+    run.assert_called_once_with(
+        ["secret-tool", "lookup", "Title", "drive-api"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    forbidden_open.assert_not_called()
+
+
+def test_empty_keyring_does_not_fall_back_to_credential_files(monkeypatch):
+    from unittest.mock import MagicMock
+    from modules import sheet_updater
+
+    monkeypatch.setattr("subprocess.run", MagicMock(return_value=MagicMock(stdout="")))
+    with pytest.raises(RuntimeError, match="키링"):
+        sheet_updater.get_sheet_service("/unused")
+
+
 def test_normalize_row_to_11cols_from_9cols():
     # 구 9열 구조: [no, sid, track, score, type, reason, date, name, subject]
     old_row = [

@@ -6,6 +6,8 @@ Playwright/Gmail 의존 없이 순수 로직(날짜 파싱, 채점 판정, 답�
 import os
 import sys
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
+from urllib.parse import unquote
 
 import pytest
 
@@ -15,6 +17,13 @@ from bin.auto_grade_email import (
     build_reply_body,
     evaluate_submission,
     parse_gmail_date,
+    build_search_url,
+    get_thread_id,
+    resolve_student_id,
+    build_grade_rows,
+    sync_grade_rows,
+    get_deadline_dt,
+    get_late_cutoff_dt,
 )
 
 # ════════════════════════════════════════════════════════
@@ -225,6 +234,152 @@ class TestEvaluateSubmission:
         )
         # 크래시 없이 점수 반환 확인
         assert isinstance(score, float)
+
+    @pytest.mark.parametrize(
+        "subject,info,day,expected",
+        [
+            ("Assignment 0.5 (896)", STUDENT_WEB2, 1, 0.7),
+            ("Assignment 0.5 (896)", STUDENT_WEB2, 4, 0.2),
+            ("Assignment 0.5", None, 1, 0.7),
+            ("Assignment 0.50 2026300896", STUDENT_WEB2, 1, 0.7),
+            ("Assignment 0.5 120263008960", STUDENT_WEB2, 1, 0.7),
+            ("Assignment 0.5 2026300857", STUDENT_WEB2, 1, 0.7),
+        ],
+    )
+    def test_missing_or_wrong_id_cannot_receive_exact_score(
+        self, subject, info, day, expected
+    ):
+        assert (
+            evaluate_submission(
+                subject, "https://example.test/work", info, self._make_dt(day), "0.5"
+            )[0]
+            == expected
+        )
+
+
+def test_search_url_preserves_entire_query_in_one_path_segment():
+    query = '"0.7" after:2026/10/12 from:student@example.test'
+    encoded = build_search_url(query).split("#search/", 1)[1]
+    assert "/" not in encoded
+    assert unquote(encoded) == query
+
+
+@pytest.mark.parametrize("attribute", ["data-legacy-thread-id", "data-thread-id"])
+@pytest.mark.parametrize("nested", [False, True])
+def test_thread_id_on_row_or_subject_element(attribute, nested):
+    row = MagicMock()
+    row.get_attribute.side_effect = lambda key: (
+        "abc123" if key == attribute and not nested else None
+    )
+    empty = MagicMock()
+    empty.count.return_value = 0
+    child = MagicMock()
+    child.count.return_value = 1
+    child.first.get_attribute.return_value = "abc123"
+    row.locator.side_effect = lambda selector: (
+        child if nested and selector == f"[{attribute}]" else empty
+    )
+    assert get_thread_id(row) == "abc123"
+
+
+@pytest.mark.parametrize(
+    "subject,email,students,expected",
+    [
+        ("Assignment 0.7 (123)", "", {"2026000123": {}}, "2026000123"),
+        ("Assignment 0.123", "", {"2026000123": {}}, None),
+        ("Assignment 0.7 (123)", "", {"2026000123": {}, "2027000123": {}}, None),
+        ("Assignment 0.7 2026000124", "", {"2026000123": {}}, None),
+        (
+            "Assignment 0.7 2026000124",
+            "S@EXAMPLE.TEST",
+            {"2026000123": {}},
+            "2026000123",
+        ),
+    ],
+)
+def test_resolve_student_uses_unique_roster_ids(subject, email, students, expected):
+    assert (
+        resolve_student_id(
+            subject, email, "", students, {"s@example.test": "2026000123"}, {}
+        )
+        == expected
+    )
+
+
+def test_missing_rows_respect_track_and_individual_filters():
+    students = {
+        "2026000123": {"id": "2026000123", "track": "1"},
+        "2026000124": {"id": "2026000124", "track": "1"},
+        "2026000125": {"id": "2026000125", "track": "4"},
+    }
+    item = {
+        "student_info": students["2026000123"],
+        "score": 0.7,
+        "reason_en": "Missing Student ID or 0.x in Subject",
+        "date": "10/15 22:43",
+        "subject": "Assignment 0.7 (123)",
+    }
+    rows = build_grade_rows([item], students, "0.7", track="1")
+    assert [(r[2], r[4]) for r in rows] == [
+        ("2026000123", "0.70"),
+        ("2026000124", "0.00"),
+    ]
+    assert rows[1][7] == "No submission"
+    only_student = build_grade_rows([], students, "0.7", student_id="2026000125")
+    assert len(only_student) == 1
+    assert only_student[0][7] == "미제출"
+    assert build_grade_rows([], students, "0.7", student_id="unknown") == []
+
+
+def test_sync_failure_prevents_later_tracks(monkeypatch):
+    from bin import auto_grade_email as engine
+
+    upload = MagicMock(return_value=False)
+    monkeypatch.setattr(engine, "upsert_grades_to_sheet", upload)
+    with pytest.raises(RuntimeError, match="답장 발송 중단"):
+        sync_grade_rows([[0, "7", "123", "1"], [0, "7", "124", "2"]])
+    assert upload.call_count == 1
+    assert upload.call_args.kwargs == {"course": "web1"}
+
+
+def test_sync_spaces_multiple_courses_to_avoid_quota_errors(monkeypatch):
+    from bin import auto_grade_email as engine
+
+    upload = MagicMock(return_value=True)
+    sleep = MagicMock()
+    monkeypatch.setattr(engine, "upsert_grades_to_sheet", upload)
+    monkeypatch.setattr(engine.time, "sleep", sleep)
+    sync_grade_rows([[0, "7", "123", "1"], [0, "7", "124", "2"]])
+    assert [call.kwargs["course"] for call in upload.call_args_list] == ["web1", "web2"]
+    sleep.assert_called_once_with(65)
+
+
+def test_cli_reports_failed_run_to_shell(monkeypatch):
+    from bin import auto_grade_email as engine
+
+    monkeypatch.setattr(engine.sys, "argv", ["auto_grade_email.py", "0.7"])
+    monkeypatch.setattr(engine, "setup_logging", lambda task: (MagicMock(), None))
+    monkeypatch.setattr(engine, "run_grading", MagicMock(return_value=False))
+    with pytest.raises(SystemExit) as exc:
+        engine.main()
+    assert exc.value.code == 1
+
+
+def test_schedule_requires_ssot_and_uses_semester_year(tmp_path, monkeypatch):
+    from bin import auto_grade_email as engine
+
+    monkeypatch.setattr(engine, "BASE_DIR", tmp_path)
+    with pytest.raises(FileNotFoundError):
+        get_deadline_dt("0.7")
+    (tmp_path / "5input").mkdir()
+    schedule = tmp_path / "5input/deadline.csv"
+    schedule.write_text(
+        "week,lab-deadline,email-deadline\n7,10/19,10/16 0:00\n", encoding="utf-8"
+    )
+    assert get_deadline_dt("0.7") == datetime(2026, 10, 16, 0, 15, tzinfo=KST)
+    assert get_late_cutoff_dt("0.7", "1") == datetime(2026, 10, 19, 16, tzinfo=KST)
+    with pytest.raises(ValueError, match="유일하게"):
+        get_deadline_dt("0.8")
 
 
 # ════════════════════════════════════════════════════════
