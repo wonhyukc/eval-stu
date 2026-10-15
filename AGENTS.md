@@ -1,6 +1,14 @@
-# AGENTS.md — eval-stu 운영 지침 (SSOT)
+# AGENTS.md — eval-stu 운영 지침 (사용 종료 및 아카이브 보존)
 
-이 문서는 `eval-stu` 저장소의 **유일한 규칙 원천(SSOT)**입니다. **학생 평가(과제 수집·채점·성적 관리)** 자동화 저장소 운영 지침을 담습니다.
+> 🚨 **[중요] 저장소 사용 종료 및 읽기 전용 안내 (2026-10-16)**
+> 본 저장소(`wonhyukc/eval-stu`)의 모든 학생 평가·채점 코드와 이력은 단일 통합 저장소인 **[`wonhyukc/stu2603`](https://github.com/wonhyukc/stu2603) 내부의 `eval/` 디렉터리로 완전히 이전 및 통합**되었습니다.
+> - **현재 저장소의 역할**: 과거 커밋 이력, 토론 및 **GitHub 이슈 참조용 읽기 전용(Archive)**으로만 영구 보존됩니다.
+> - **신규 작업 및 이슈**: 앞으로의 모든 과제 채점, 스킬 추가, 성적 관리 및 신규 이슈 등록은 **`wonhyukc/stu2603`** 에서만 단일 수행됩니다.
+> - **상세 참조**: [저장소 통합 실행 계획](1docs/repository-unification-plan.md) 및 [stu2603 #244](https://github.com/wonhyukc/stu2603/issues/244)
+
+---
+
+이 문서는 과거 `eval-stu` 저장소의 운영 지침 기록입니다.
 
 > **⚠️ SSOT 경고**: `.agents/rules/language.md`와 `.agents/rules/rules-project.md`는 **생성 금지**입니다. 모든 규칙은 이 문서(AGENTS.md)에만 정의됩니다. pre-commit 훅이 재생성을 차단합니다.
 >
