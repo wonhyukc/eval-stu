@@ -7,7 +7,10 @@
 
 **작업 위치와 주간 일정**: [주간 과제 운영 흐름](1docs/weekly-assignment-workflow.md)에서 이메일·랩·상호평가 대상 주차와 현재 일정 원천의 차이를 확인합니다. 루브릭 작성·공개는 `stu2603`, 제출물 수집·상호평가 배정·채점·성적 반영은 `eval-stu`가 담당합니다.
 
-**저장소 통합 계획**: [stu2603 #244](https://github.com/wonhyukc/stu2603/issues/244)와 [상세 실행 계획](1docs/repository-unification-plan.md)을 참고합니다. 실제 이전은 아직 실행하지 않았습니다.
+> 🚨 **저장소 통합 및 이전 완료 안내 (2026-10-16)**
+> 이 저장소의 모든 기능, 커밋 이력 및 채점 도구는 비공개 단일 통합 저장소인 **`wonhyukc/stu2603` 내부의 `eval/` 디렉터리로 편입 완료**되었습니다.
+> 향후 모든 과제 수집, 채점, 성적 관리, 스킬 및 이슈 관리는 통합 저장소 **[`wonhyukc/stu2603`](https://github.com/wonhyukc/stu2603)** 에서 단일 관리됩니다.
+> 상세 내용: [저장소 통합 실행 계획](1docs/repository-unification-plan.md) 및 [stu2603 #244](https://github.com/wonhyukc/stu2603/issues/244)
 
 > ⚠️ **출결(출석·결석·지각·조퇴) 관련 내용은 이 저장소의 관할이 아닙니다.**
 > 출결 데이터 조회·수정은 **`stu` 저장소(`../stu2603`)** 에서 확인하세요.
